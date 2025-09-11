@@ -64,6 +64,9 @@ export const user = pgTable("user", {
   dateOfBirth: timestamp("date_of_birth"),
   phone: text("phone"),
   address: text("address"),
+  isOnboarded: boolean("is_onboarded")
+    .$defaultFn(() => false)
+    .notNull(),
   createdAt: timestamp("created_at")
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
