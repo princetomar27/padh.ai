@@ -4,9 +4,9 @@ export const createUserSchema = z
   .object({
     name: z.string().min(1, { message: "Name is required" }),
     role: z.enum(["STUDENT", "PARENT", "TEACHER", "ADMIN"]),
-    //   class is only required user role is student
-    class: z.number().min(1, { message: "Class is required" }).optional(),
-    school: z.string().min(1, { message: "School is required" }).optional(),
+    // class and school are only required when role is student
+    class: z.number().optional(),
+    school: z.string().optional(),
   })
   .refine(
     (data) => {
@@ -14,8 +14,10 @@ export const createUserSchema = z
         return (
           data.class !== undefined &&
           data.class !== null &&
+          data.class >= 1 &&
           data.school !== undefined &&
-          data.school !== null
+          data.school !== null &&
+          data.school.trim() !== ""
         );
       }
       return true;

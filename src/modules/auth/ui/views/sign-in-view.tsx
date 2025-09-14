@@ -1,15 +1,8 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { FaGithub } from "react-icons/fa";
-import { FcGoogle } from "react-icons/fc";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Input } from "@/components/ui/input";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { useForm } from "react-hook-form";
-import { authClient } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Form,
   FormControl,
@@ -18,11 +11,18 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { authClient } from "@/lib/auth-client";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { OctagonAlertIcon } from "lucide-react";
-import Link from "next/link";
-import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { FaGithub } from "react-icons/fa";
+import { FcGoogle } from "react-icons/fc";
+import { z } from "zod";
 
 const formSchema = z.object({
   email: z.string().email(),
@@ -185,13 +185,12 @@ export const SignInView = () => {
           </Form>
           <div className="bg-radial from-sidebar-accent to-sidebar relative hidden md:flex flex-col gap-y-4 items-center justify-center h-full">
             <Image
-              src="/logo.svg"
+              src="/logo2.svg"
               alt="Image"
-              width={92}
-              height={92}
-              className="h-[92px] w-[92px]"
+              width={400}
+              height={400}
+              className="mt-4 justify-center"
             />
-            <p className=" text-2xl font-semibold text-white">samvaad.ai</p>
           </div>
         </CardContent>
       </Card>

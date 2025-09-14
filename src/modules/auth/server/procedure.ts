@@ -6,15 +6,23 @@ import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 export const onboardingRouter = createTRPCRouter({
-  createUser: protectedProcedure
+  onboardUser: protectedProcedure
     .input(createUserSchema)
     .mutation(async ({ input, ctx }) => {
+      // Prepare update data based on role
+      const updateData = {
+        name: input.name,
+        role: input.role,
+        isOnboarded: true,
+        ...(input.role === "STUDENT" && {
+          class: input.class,
+          school: input.school,
+        }),
+      };
+
       const [updatedUser] = await db
         .update(user)
-        .set({
-          ...input,
-          isOnboarded: true,
-        })
+        .set(updateData)
         .where(and(eq(user.id, ctx.auth.user.id), eq(user.isOnboarded, false)))
         .returning();
 

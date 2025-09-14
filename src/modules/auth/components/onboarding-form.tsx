@@ -50,6 +50,8 @@ export const OnboardingForm = ({ onSuccess }: OnboardingFormProps) => {
     },
   });
 
+  const selectedRole = form.watch("role");
+
   // Update form when session data loads
   useEffect(() => {
     if (session?.user?.name) {
@@ -57,10 +59,18 @@ export const OnboardingForm = ({ onSuccess }: OnboardingFormProps) => {
     }
   }, [session?.user?.name, form]);
 
+  // Clear class and school when role changes to non-student
+  useEffect(() => {
+    if (selectedRole !== "STUDENT") {
+      form.setValue("class", undefined);
+      form.setValue("school", "");
+    }
+  }, [selectedRole, form]);
+
   const trpc = useTRPC();
   const createUserMutation = useMutation(
-    trpc.auth.createUser.mutationOptions({
-      onSuccess: (data) => {
+    trpc.auth.onboardUser.mutationOptions({
+      onSuccess: async (data) => {
         setIsSubmitting(false);
         onSuccess(data.role);
       },
@@ -74,10 +84,19 @@ export const OnboardingForm = ({ onSuccess }: OnboardingFormProps) => {
   const onSubmit = (data: z.infer<typeof createUserSchema>) => {
     setError(null);
     setIsSubmitting(true);
-    createUserMutation.mutate(data);
-  };
 
-  const selectedRole = form.watch("role");
+    // Prepare data based on role
+    const submitData = {
+      name: data.name,
+      role: data.role,
+      ...(data.role === "STUDENT" && {
+        class: data.class,
+        school: data.school,
+      }),
+    };
+
+    createUserMutation.mutate(submitData);
+  };
 
   // Show loading state while session is loading
   if (isSessionLoading) {
