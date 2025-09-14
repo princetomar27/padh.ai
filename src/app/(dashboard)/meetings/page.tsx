@@ -1,4 +1,3 @@
-import { auth } from "@/lib/auth";
 import { MeetingsListHeader } from "@/modules/meetings/components/meetings-list-header";
 import {
   MeetingsView,
@@ -9,8 +8,6 @@ import { getQueryClient, trpc } from "@/trpc/server";
 import { meetingsLoadSearchParams } from "@/modules/meetings/params";
 import { SearchParams } from "nuqs/server";
 import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import React, { Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
@@ -20,12 +17,6 @@ interface MeetingPageProps {
 
 const MeetingsPage = async ({ searchParams }: MeetingPageProps) => {
   const filterParams = await meetingsLoadSearchParams(searchParams);
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-  if (!session) {
-    redirect("/sign-in");
-  }
 
   const queryClient = getQueryClient();
 

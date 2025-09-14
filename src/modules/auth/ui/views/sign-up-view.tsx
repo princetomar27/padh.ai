@@ -12,6 +12,7 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Form,
   FormControl,
@@ -234,9 +235,14 @@ export const SignUpView = () => {
               </div>
             </form>
           </Form>
-          <div className="bg-radial from-sidebar-accent-foreground to-sidebar-ring relative hidden md:flex flex-col gap-y-4 items-center justify-center h-full">
-            <img src="/logo.svg" alt="Image" className="h-[92px] w-[92px]" />
-            <p className=" text-2xl font-semibold text-white">samvaad.ai</p>
+          <div className="bg-radial from-sidebar-accent to-sidebar relative hidden md:flex flex-col gap-y-4 items-center justify-center h-full">
+            <Image
+              src="/logo2.svg"
+              alt="Image"
+              width={400}
+              height={400}
+              className="mt-4 justify-center"
+            />
           </div>
         </CardContent>
       </Card>
