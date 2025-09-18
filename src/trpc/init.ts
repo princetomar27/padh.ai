@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { agents, meetings } from "@/db/schema";
+import { agents, meetings, user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { polarClient } from "@/lib/polar";
 import {
@@ -84,3 +84,20 @@ export const premiumProcedure = (entity: "meetings" | "agents") =>
 
     return next({ ctx: { ...ctx, customer } });
   });
+
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  // Check if user is admin
+  const [userRecord] = await db
+    .select({ role: user.role })
+    .from(user)
+    .where(eq(user.id, ctx.auth.user.id));
+
+  if (!userRecord || userRecord.role !== "ADMIN") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Admin access required",
+    });
+  }
+
+  return next({ ctx });
+});
