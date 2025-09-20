@@ -58,27 +58,27 @@ const adminNavigationItems: NavigationItem[] = [
       {
         icon: FaSchool,
         label: "Classes",
-        href: "/classes",
+        href: "/admin/classes",
       },
       {
         icon: FaBookOpen,
         label: "Subjects",
-        href: "/subjects",
+        href: "/admin/subjects",
       },
       {
         icon: FaBook,
         label: "Books",
-        href: "/books",
+        href: "/admin/books",
       },
       {
         icon: FaFileInvoice,
         label: "Chapters",
-        href: "/chapters",
+        href: "/admin/chapters",
       },
       {
         icon: SchoolIcon,
         label: "Schools",
-        href: "/schools",
+        href: "/admin/schools",
       },
     ],
   },

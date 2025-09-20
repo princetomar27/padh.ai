@@ -1,15 +1,15 @@
-import { GeneratedAvatar } from "@/components/generated-avatar";
+// import { GeneratedAvatar } from "@/components/generated-avatar";
 import {
   CommandResponsiveDialog,
   CommandInput,
-  CommandItem,
+  // CommandItem,
   CommandList,
   CommandGroup,
   CommandEmpty,
 } from "@/components/ui/command";
-import { useTRPC } from "@/trpc/client";
-import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+// import { useTRPC } from "@/trpc/client";
+// import { useQuery } from "@tanstack/react-query";
+// import { useRouter } from "next/navigation";
 import { Dispatch, SetStateAction, useState } from "react";
 
 interface Props {
@@ -18,22 +18,22 @@ interface Props {
 }
 
 const DashboardCommand = ({ open, setOpen }: Props) => {
-  const router = useRouter();
+  // const router = useRouter();
   const [search, setSearch] = useState("");
 
-  const trpc = useTRPC();
-  const meetings = useQuery(
-    trpc.meetings.getMany.queryOptions({
-      search,
-      pageSize: 100,
-    })
-  );
-  const agents = useQuery(
-    trpc.agents.getMany.queryOptions({
-      search,
-      pageSize: 100,
-    })
-  );
+  // const trpc = useTRPC();
+  // const meetings = useQuery(
+  //   trpc.meetings.getMany.queryOptions({
+  //     search,
+  //     pageSize: 100,
+  //   })
+  // );
+  // const agents = useQuery(
+  //   trpc.agents.getMany.queryOptions({
+  //     search,
+  //     pageSize: 100,
+  //   })
+  // );
 
   return (
     <CommandResponsiveDialog
@@ -53,7 +53,8 @@ const DashboardCommand = ({ open, setOpen }: Props) => {
               No meetings found
             </span>
           </CommandEmpty>
-          {meetings.data?.items.map((meeting) => (
+          {/* TODO: Uncomment once start working */}
+          {/* {meetings.data?.items.map((meeting) => (
             <CommandItem
               onSelect={() => {
                 router.push(`/meetings/${meeting.id}`);
@@ -63,7 +64,7 @@ const DashboardCommand = ({ open, setOpen }: Props) => {
             >
               {meeting.name}
             </CommandItem>
-          ))}
+          ))} */}
         </CommandGroup>
 
         <CommandGroup heading="Agents">
@@ -72,7 +73,8 @@ const DashboardCommand = ({ open, setOpen }: Props) => {
               No agents found
             </span>
           </CommandEmpty>
-          {agents.data?.items.map((agent) => (
+          {/* TODO: Uncomment once start working */}
+          {/* {agents.data?.items.map((agent) => (
             <CommandItem
               onSelect={() => {
                 router.push(`/agents/${agent.id}`);
@@ -87,7 +89,7 @@ const DashboardCommand = ({ open, setOpen }: Props) => {
                 className="size-5"
               />
             </CommandItem>
-          ))}
+          ))} */}
         </CommandGroup>
       </CommandList>
     </CommandResponsiveDialog>

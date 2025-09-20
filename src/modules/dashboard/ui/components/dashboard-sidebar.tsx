@@ -18,7 +18,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import DashboardUserButton from "./dashboard-user-button";
-import { DashboardTrial } from "./dashboard-trial";
+// import { DashboardTrial } from "./dashboard-trial";
 import { authClient } from "@/lib/auth-client";
 import { useTRPC } from "@/trpc/client";
 import { useSuspenseQuery } from "@tanstack/react-query";
@@ -67,7 +67,8 @@ export const DashboardSidebar = () => {
         </SidebarContent>
         <SidebarFooter className=" ">
           <div className="p-2 gap-y-2 flex flex-col">
-            <DashboardTrial />
+            {/* // TODO: Uncomment this later */}
+            {/* <DashboardTrial /> */}
             <DashboardUserButton />
           </div>
         </SidebarFooter>
@@ -144,7 +145,8 @@ export const DashboardSidebar = () => {
 
       <SidebarFooter className=" ">
         <div className="p-2 gap-y-2 flex flex-col">
-          <DashboardTrial />
+          {/* TODO : Uncomment this later */}
+          {/* <DashboardTrial /> */}
           <DashboardUserButton />
         </div>
       </SidebarFooter>

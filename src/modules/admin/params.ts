@@ -1,4 +1,9 @@
-import { parseAsStringEnum, createLoader } from "nuqs/server";
+import {
+  parseAsStringEnum,
+  createLoader,
+  parseAsInteger,
+  parseAsString,
+} from "nuqs/server";
 
 const adminSearchParams = {
   dateRange: parseAsStringEnum(["7d", "30d", "90d", "1y"]).withDefault("30d"),
@@ -8,4 +13,12 @@ const adminSearchParams = {
   ),
 };
 
+const adminClassesSearchParams = {
+  ...adminSearchParams,
+  search: parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
+  page: parseAsInteger.withDefault(1),
+  limit: parseAsInteger.withDefault(10),
+};
+
 export const adminLoadSearchParams = createLoader(adminSearchParams);
+export const adminClassesLoadSearchParams = createLoader(adminClassesSearchParams);

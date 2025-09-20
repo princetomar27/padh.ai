@@ -10,11 +10,13 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { count, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { cache } from "react";
-export const createTRPCContext = cache(async () => {
-  return { userId: "user_123" };
+export const createTRPCContext = cache(async (opts?: { req: Request }) => {
+  return {
+    req: opts?.req,
+  };
 });
 
-const t = initTRPC.create({});
+const t = initTRPC.context<{ req?: Request }>().create({});
 // Base router and procedure helpers
 export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
@@ -23,7 +25,7 @@ export const baseProcedure = t.procedure;
 // PROTECTED PROCEDURE
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
   const session = await auth.api.getSession({
-    headers: await headers(),
+    headers: ctx.req?.headers || (await headers()),
   });
 
   if (!session) {
@@ -95,7 +97,9 @@ export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   if (!userRecord || userRecord.role !== "ADMIN") {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Admin access required",
+      message: `Admin access required. Current role: ${
+        userRecord?.role || "none"
+      }`,
     });
   }
 
