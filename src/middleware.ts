@@ -65,11 +65,11 @@ export async function middleware(request: NextRequest) {
         ) {
           // Redirect to specific role page based on user role
           if (userRole === "STUDENT") {
-            return NextResponse.redirect(new URL("/subjects", request.url));
+            return NextResponse.redirect(new URL("/students", request.url));
           } else if (userRole === "TEACHER") {
             return NextResponse.redirect(new URL("/teachers", request.url));
           } else if (userRole === "PARENT") {
-            return NextResponse.redirect(new URL("/students", request.url));
+            return NextResponse.redirect(new URL("/parents", request.url));
           } else if (userRole === "ADMIN") {
             return NextResponse.redirect(new URL("/admin", request.url));
           } else {
@@ -80,11 +80,11 @@ export async function middleware(request: NextRequest) {
         // Redirect from root dashboard to role-specific page
         if (pathname === "/") {
           if (userRole === "STUDENT") {
-            return NextResponse.redirect(new URL("/subjects", request.url));
+            return NextResponse.redirect(new URL("/students", request.url));
           } else if (userRole === "TEACHER") {
             return NextResponse.redirect(new URL("/teachers", request.url));
           } else if (userRole === "PARENT") {
-            return NextResponse.redirect(new URL("/students", request.url));
+            return NextResponse.redirect(new URL("/parents", request.url));
           } else if (userRole === "ADMIN") {
             return NextResponse.redirect(new URL("/admin", request.url));
           }

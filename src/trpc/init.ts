@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { agents, meetings } from "@/db/schema";
+import { agents, meetings, user } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { polarClient } from "@/lib/polar";
 import {
@@ -10,11 +10,13 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { count, eq } from "drizzle-orm";
 import { headers } from "next/headers";
 import { cache } from "react";
-export const createTRPCContext = cache(async () => {
-  return { userId: "user_123" };
+export const createTRPCContext = cache(async (opts?: { req: Request }) => {
+  return {
+    req: opts?.req,
+  };
 });
 
-const t = initTRPC.create({});
+const t = initTRPC.context<{ req?: Request }>().create({});
 // Base router and procedure helpers
 export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
@@ -23,7 +25,7 @@ export const baseProcedure = t.procedure;
 // PROTECTED PROCEDURE
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
   const session = await auth.api.getSession({
-    headers: await headers(),
+    headers: ctx.req?.headers || (await headers()),
   });
 
   if (!session) {
@@ -84,3 +86,22 @@ export const premiumProcedure = (entity: "meetings" | "agents") =>
 
     return next({ ctx: { ...ctx, customer } });
   });
+
+export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  // Check if user is admin
+  const [userRecord] = await db
+    .select({ role: user.role })
+    .from(user)
+    .where(eq(user.id, ctx.auth.user.id));
+
+  if (!userRecord || userRecord.role !== "ADMIN") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Admin access required. Current role: ${
+        userRecord?.role || "none"
+      }`,
+    });
+  }
+
+  return next({ ctx });
+});

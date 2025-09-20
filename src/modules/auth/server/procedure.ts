@@ -34,4 +34,30 @@ export const onboardingRouter = createTRPCRouter({
       }
       return updatedUser;
     }),
+
+  getCurrentUser: protectedProcedure.query(async ({ ctx }) => {
+    const [currentUser] = await db
+      .select({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+        class: user.class,
+        school: user.school,
+        isOnboarded: user.isOnboarded,
+      })
+      .from(user)
+      .where(eq(user.id, ctx.auth.user.id))
+      .limit(1);
+
+    if (!currentUser) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "User not found",
+      });
+    }
+
+    return currentUser;
+  }),
 });

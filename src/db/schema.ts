@@ -393,6 +393,28 @@ export const pageInteractions = pgTable("page_interactions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Meetings table for video call functionality
+export const meetings = pgTable("meetings", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
+  name: text("name").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  status: learningSessionStatus("status").notNull().default("UPCOMING"),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  duration: integer("duration"), // Duration in minutes
+  transcriptUrl: text("transcript_url"),
+  summary: text("summary"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Keep agents table for AI tutor functionality
 export const agents = pgTable("agents", {
   id: text("id")
