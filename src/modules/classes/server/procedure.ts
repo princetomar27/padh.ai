@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { classes, subjects, books, user, chapters } from "@/db/schema";
+import { classes, subjects, books, userProfiles, chapters } from "@/db/schema";
 import {
   adminProcedure,
   createTRPCRouter,
@@ -46,11 +46,11 @@ export const classesRouter = createTRPCRouter({
             const [studentCount, subjectCount, bookCount] = await Promise.all([
               db
                 .select({ count: count() })
-                .from(user)
+                .from(userProfiles)
                 .where(
                   and(
-                    eq(user.class, classItem.number),
-                    eq(user.role, "STUDENT")
+                    eq(userProfiles.class, classItem.number),
+                    eq(userProfiles.role, "STUDENT")
                   )
                 ),
 
@@ -136,9 +136,9 @@ export const classesRouter = createTRPCRouter({
         await Promise.all([
           db
             .select({ count: count() })
-            .from(user)
+            .from(userProfiles)
             .where(
-              and(eq(user.class, classData.number), eq(user.role, "STUDENT"))
+              and(eq(userProfiles.class, classData.number), eq(userProfiles.role, "STUDENT"))
             ),
 
           db
@@ -295,14 +295,14 @@ export const classesRouter = createTRPCRouter({
         // Check if class has students
         const [studentCount] = await db
           .select({ count: count() })
-          .from(user)
+          .from(userProfiles)
           .where(
             and(
               eq(
-                user.class,
+                userProfiles.class,
                 sql`(SELECT number FROM ${classes} WHERE id = ${input.id})`
               ),
-              eq(user.role, "STUDENT")
+              eq(userProfiles.role, "STUDENT")
             )
           );
 

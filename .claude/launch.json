@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Dev Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "Inngest Dev Server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["inngest-cli@latest", "dev", "-u", "http://localhost:3000/api/inngest"],
+      "port": 8288
+    },
+    {
+      "name": "Drizzle Studio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "db:studio"],
+      "port": 4983
+    }
+  ]
+}

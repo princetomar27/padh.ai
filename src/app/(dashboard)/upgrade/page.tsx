@@ -27,3 +27,6 @@
 // };
 
 // export default Page;
+
+const UpgradePage = () => null;
+export default UpgradePage;

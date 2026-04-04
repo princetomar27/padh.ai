@@ -1,26 +1,27 @@
 "use client";
 
-import { ErrorState } from "@/components/error-state";
-import { LoadingState } from "@/components/loading-state";
 import { OnboardingForm } from "../../components/onboarding-form";
-import React from "react";
-import { useRouter } from "next/navigation";
+import { LoadingState } from "@/components/loading-state";
+import { ErrorState } from "@/components/error-state";
 
 export const OnboardingView = () => {
-  const router = useRouter();
-
   const handleSuccess = (userRole: string) => {
-    if (userRole === "STUDENT") {
-      router.push("/subjects");
-    } else if (userRole === "TEACHER") {
-      router.push("/subjects");
-    } else if (userRole === "PARENT") {
-      router.push("/students");
-    } else if (userRole === "ADMIN") {
-      router.push("/admin");
-    } else {
-      router.push("/");
-    }
+    // Use a full-page navigation instead of router.push so the browser sends
+    // the fresh Clerk session cookie (updated by clerkUser.reload()) on the
+    // very next request. router.push() is a client-side transition that reuses
+    // the old request context and can hit the middleware before the new JWT
+    // cookie is fully committed, causing a spurious redirect to sign-in.
+    const destination =
+      userRole === "ADMIN"
+        ? "/admin"
+        : userRole === "PARENT"
+          ? "/parents"
+          : "/dashboard";
+
+    // Set a short-lived fallback cookie to instantly tell our Next.js middleware
+    // that the user has been onboarded, bypassing any Clerk JWT refresh lags.
+    document.cookie = `padh_ai_onboarded=true; path=/; max-age=120`;
+    window.location.href = destination;
   };
 
   return (
@@ -30,20 +31,16 @@ export const OnboardingView = () => {
   );
 };
 
-export const OnboardingViewLoading = () => {
-  return (
-    <LoadingState
-      title="Loading Onboarding"
-      description="Please wait while we load the onboarding"
-    />
-  );
-};
+export const OnboardingViewLoading = () => (
+  <LoadingState
+    title="Setting up your profile"
+    description="Please wait a moment…"
+  />
+);
 
-export const OnboardingViewError = () => {
-  return (
-    <ErrorState
-      title="Error Loading Onboarding"
-      description="Please try again later"
-    />
-  );
-};
+export const OnboardingViewError = () => (
+  <ErrorState
+    title="Something went wrong"
+    description="Could not load the onboarding form. Please refresh the page."
+  />
+);

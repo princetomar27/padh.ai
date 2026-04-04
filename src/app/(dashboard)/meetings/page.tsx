@@ -41,3 +41,7 @@
 // };
 
 // export default MeetingsPage;
+
+// Meetings (Stream.io) removed — will be rebuilt as learning sessions in Phase 5
+const MeetingsPage = () => null;
+export default MeetingsPage;

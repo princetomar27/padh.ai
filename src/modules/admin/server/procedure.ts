@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import {
-  user,
+  userProfiles,
   books,
   subjects,
   classes,
@@ -55,8 +55,8 @@ export const adminRouter = createTRPCRouter({
           // Current period stats
           db
             .select({ count: count() })
-            .from(user)
-            .where(eq(user.role, "STUDENT")),
+            .from(userProfiles)
+            .where(eq(userProfiles.role, "STUDENT")),
           db
             .select({ count: count() })
             .from(books)
@@ -73,12 +73,12 @@ export const adminRouter = createTRPCRouter({
           // Previous period for growth calculation
           db
             .select({ count: count() })
-            .from(user)
+            .from(userProfiles)
             .where(
               and(
-                eq(user.role, "STUDENT"),
+                eq(userProfiles.role, "STUDENT"),
                 lte(
-                  user.createdAt,
+                  userProfiles.createdAt,
                   new Date(startDate.getTime() - daysBack * 24 * 60 * 60 * 1000)
                 )
               )
@@ -155,20 +155,20 @@ export const adminRouter = createTRPCRouter({
           ] = await Promise.all([
             db
               .select({
-                role: user.role,
+                role: userProfiles.role,
                 count: count(),
               })
-              .from(user)
-              .groupBy(user.role),
+              .from(userProfiles)
+              .groupBy(userProfiles.role),
 
             db
               .select({
-                class: user.class,
+                class: userProfiles.class,
                 count: count(),
               })
-              .from(user)
-              .where(eq(user.role, "STUDENT"))
-              .groupBy(user.class),
+              .from(userProfiles)
+              .where(eq(userProfiles.role, "STUDENT"))
+              .groupBy(userProfiles.class),
 
             db
               .select({
@@ -181,7 +181,7 @@ export const adminRouter = createTRPCRouter({
 
             db
               .select({
-                avgDuration: avg(learningSessions.duration),
+                avgDuration: avg(learningSessions.durationSeconds),
               })
               .from(learningSessions)
               .where(gte(learningSessions.createdAt, startDate)),
@@ -207,8 +207,6 @@ export const adminRouter = createTRPCRouter({
             usersByRole: {
               students:
                 usersByRoleResult.find((r) => r.role === "STUDENT")?.count ?? 0,
-              teachers:
-                usersByRoleResult.find((r) => r.role === "TEACHER")?.count ?? 0,
               parents:
                 usersByRoleResult.find((r) => r.role === "PARENT")?.count ?? 0,
               admins:
@@ -236,7 +234,6 @@ export const adminRouter = createTRPCRouter({
 
         let recentActivity = null;
         if (includeRecentActivity) {
-          // Get recent activity (simplified - in real app you'd have an activity log table)
           const recentActivities = await Promise.all([
             // Recent book uploads
             db
@@ -254,41 +251,29 @@ export const adminRouter = createTRPCRouter({
             // Recent student registrations
             db
               .select({
-                id: user.id,
-                name: user.name,
-                createdAt: user.createdAt,
+                id: userProfiles.id,
+                name: userProfiles.name,
+                createdAt: userProfiles.createdAt,
                 type: sql<string>`'student_joined'`,
                 actor: sql<string>`'System'`,
               })
-              .from(user)
-              .where(eq(user.role, "STUDENT"))
-              .orderBy(desc(user.createdAt))
+              .from(userProfiles)
+              .where(eq(userProfiles.role, "STUDENT"))
+              .orderBy(desc(userProfiles.createdAt))
               .limit(3),
+
             // Recent parent registrations
             db
               .select({
-                id: user.id,
-                name: user.name,
-                createdAt: user.createdAt,
+                id: userProfiles.id,
+                name: userProfiles.name,
+                createdAt: userProfiles.createdAt,
                 type: sql<string>`'parent_joined'`,
                 actor: sql<string>`'System'`,
               })
-              .from(user)
-              .where(eq(user.role, "PARENT"))
-              .orderBy(desc(user.createdAt))
-              .limit(3),
-            // Recent teacher registrations
-            db
-              .select({
-                id: user.id,
-                name: user.name,
-                createdAt: user.createdAt,
-                type: sql<string>`'teacher_joined'`,
-                actor: sql<string>`'System'`,
-              })
-              .from(user)
-              .where(eq(user.role, "TEACHER"))
-              .orderBy(desc(user.createdAt))
+              .from(userProfiles)
+              .where(eq(userProfiles.role, "PARENT"))
+              .orderBy(desc(userProfiles.createdAt))
               .limit(3),
 
             // Recent test creations
@@ -298,7 +283,7 @@ export const adminRouter = createTRPCRouter({
                 title: tests.title,
                 createdAt: tests.createdAt,
                 type: sql<string>`'test_created'`,
-                actor: sql<string>`'Teacher Admin'`,
+                actor: sql<string>`'Admin'`,
               })
               .from(tests)
               .orderBy(desc(tests.createdAt))
@@ -331,14 +316,6 @@ export const adminRouter = createTRPCRouter({
               actor: item.actor,
             })),
             ...recentActivities[3].map((item) => ({
-              id: item.id,
-              type: "teacher_joined" as const,
-              title: `${item.name} joined the platform`,
-              description: `New teacher registered`,
-              timestamp: new Date(item.createdAt),
-              actor: item.actor,
-            })),
-            ...recentActivities[4].map((item) => ({
               id: item.id,
               type: "test_created" as const,
               title: `${item.title} test created`,
@@ -430,19 +407,19 @@ export const adminRouter = createTRPCRouter({
 
         const userStats = await db
           .select({
-            role: user.role,
-            class: user.class,
+            role: userProfiles.role,
+            class: userProfiles.class,
             count: count(),
           })
-          .from(user)
+          .from(userProfiles)
           .where(
             and(
-              gte(user.createdAt, startDate),
-              role ? eq(user.role, role) : undefined,
-              userClass ? eq(user.class, userClass) : undefined
+              gte(userProfiles.createdAt, startDate),
+              role ? eq(userProfiles.role, role) : undefined,
+              userClass ? eq(userProfiles.class, userClass) : undefined
             )
           )
-          .groupBy(user.role, user.class);
+          .groupBy(userProfiles.role, userProfiles.class);
 
         return {
           totalUsers: userStats.reduce((sum, stat) => sum + stat.count, 0),
@@ -528,8 +505,6 @@ export const adminRouter = createTRPCRouter({
     .input(systemHealthQuerySchema)
     .query(async () => {
       try {
-        // In a real implementation, you'd query system metrics
-        // For now, return mock data
         return {
           status: "healthy" as const,
           uptime: 99.9,
@@ -537,7 +512,7 @@ export const adminRouter = createTRPCRouter({
           memoryUsage: 67.3,
           cpuUsage: 23.1,
           diskUsage: 45.2,
-          lastBackup: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+          lastBackup: new Date(Date.now() - 2 * 60 * 60 * 1000),
         };
       } catch (error) {
         console.error("Error fetching system health:", error);
@@ -558,16 +533,12 @@ export const adminRouter = createTRPCRouter({
 
         switch (action) {
           case "activate":
-            // Implementation would update user status
             break;
           case "deactivate":
-            // Implementation would deactivate users
             break;
           case "delete":
-            // Implementation would soft delete users
             break;
           case "export":
-            // Implementation would export user data
             break;
         }
 

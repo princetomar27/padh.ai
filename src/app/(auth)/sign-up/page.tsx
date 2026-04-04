@@ -1,22 +1,16 @@
-import { auth } from "@/lib/auth";
-import { SignUpView } from "@/modules/auth/ui/views/sign-up-view";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { SignUp } from "@clerk/nextjs";
 
-const Page = async () => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-
-  if (!!session) {
-    redirect("/");
-  }
-
+/**
+ * Sign-up page — Clerk handles the full UI and auth flow (email + Google SSO).
+ *
+ * forceRedirectUrl="/onboarding" ensures that after ANY sign-up method
+ * (email/password or Google OAuth), Clerk always lands on /onboarding.
+ * The middleware then routes onboarded users away from /onboarding automatically.
+ */
+export default function SignUpPage() {
   return (
-    <div>
-      <SignUpView />
+    <div className="flex min-h-screen items-center justify-center bg-muted/50 p-4">
+      <SignUp forceRedirectUrl="/onboarding" />
     </div>
   );
-};
-
-export default Page;
+}

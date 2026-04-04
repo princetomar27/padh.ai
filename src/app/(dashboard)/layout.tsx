@@ -3,6 +3,10 @@ import DashboardNavbar from "@/modules/dashboard/ui/components/dashboard-navbar"
 import { DashboardSidebar } from "@/modules/dashboard/ui/components/dashboard-sidebar";
 import React from "react";
 
+// Dashboard pages require Clerk auth — disable static prerendering so Next.js
+// never tries to fetch tRPC/user data without a live server.
+export const dynamic = "force-dynamic";
+
 interface LayoutProps {
   children: React.ReactNode;
 }
