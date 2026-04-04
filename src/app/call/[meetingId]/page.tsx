@@ -1,28 +1,15 @@
-import { CallView } from "@/modules/call/ui/views/call-view";
-import { getQueryClient, trpc } from "@/trpc/server";
-import { dehydrate, HydrationBoundary } from "@tanstack/react-query";
-
-interface StreamVideoCallProps {
-  params: Promise<{
-    meetingId: string;
-  }>;
-}
-
-const CallPage = async ({ params }: StreamVideoCallProps) => {
-  const { meetingId } = await params;
-
-  const queryClient = getQueryClient();
-
-  void queryClient.prefetchQuery(
-    trpc.meetings.getOne.queryOptions({
-      id: meetingId,
-    })
-  );
-
+/**
+ * Live call page — being rebuilt for padh.ai using OpenAI Realtime API
+ * directly over WebRTC (replaces the old Stream.io video call).
+ * This will become the AI learning session view in Phase 5.
+ */
+const CallPage = () => {
   return (
-    <HydrationBoundary state={dehydrate(queryClient)}>
-      <CallView meetingId={meetingId} />
-    </HydrationBoundary>
+    <div className="flex h-screen items-center justify-center bg-background">
+      <p className="text-muted-foreground">
+        AI learning sessions are coming soon.
+      </p>
+    </div>
   );
 };
 

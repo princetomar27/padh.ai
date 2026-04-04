@@ -13,7 +13,7 @@ export const recentActivityQuerySchema = z.object({
       "book_upload",
       "student_joined",
       "parent_joined",
-      "teacher_joined",
+      "admin_joined",
       "test_created",
       "ai_tutor_updated",
       "chapter_processed",
@@ -28,7 +28,7 @@ export const recentActivityQuerySchema = z.object({
 
 export const userAnalyticsQuerySchema = z.object({
   dateRange: z.enum(["7d", "30d", "90d", "1y"]).default("30d"),
-  role: z.enum(["STUDENT", "PARENT", "TEACHER", "ADMIN"]).optional(),
+  role: z.enum(["STUDENT", "PARENT", "ADMIN"]).optional(),
   class: z.number().min(1).max(12).optional(),
 });
 
@@ -48,7 +48,7 @@ export const createActivityLogSchema = z.object({
     "book_upload",
     "student_joined",
     "parent_joined",
-    "teacher_joined",
+    "admin_joined",
     "test_created",
     "ai_tutor_updated",
     "chapter_processed",

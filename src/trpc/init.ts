@@ -1,105 +1,124 @@
 import { db } from "@/db";
-import { agents, meetings, user } from "@/db/schema";
-import { auth } from "@/lib/auth";
-import { polarClient } from "@/lib/polar";
-import {
-  MAX_FREE_AGENTS,
-  MAX_FREE_MEETINGS,
-} from "@/modules/premium/constants";
+import { userProfiles } from "@/db/schema";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { initTRPC, TRPCError } from "@trpc/server";
-import { count, eq } from "drizzle-orm";
-import { headers } from "next/headers";
+import { eq } from "drizzle-orm";
 import { cache } from "react";
+
+// ─── Context ─────────────────────────────────────────────────────────────────
+
 export const createTRPCContext = cache(async (opts?: { req: Request }) => {
   return {
     req: opts?.req,
   };
 });
 
+// ─── tRPC instance ────────────────────────────────────────────────────────────
+
 const t = initTRPC.context<{ req?: Request }>().create({});
-// Base router and procedure helpers
+
 export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
 
-// PROTECTED PROCEDURE
-export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
-  const session = await auth.api.getSession({
-    headers: ctx.req?.headers || (await headers()),
-  });
+// ─── Protected Procedure ─────────────────────────────────────────────────────
 
-  if (!session) {
+/**
+ * protectedProcedure — Requires a valid Clerk session.
+ *
+ * Injects `ctx.userId` (Clerk user ID) and `ctx.user` (userProfiles DB row).
+ *
+ * Upsert strategy: if no user_profiles row exists yet (e.g. the Clerk webhook
+ * hasn't fired yet after a fresh sign-up), we fetch the user from Clerk and
+ * create the row inline. This makes the system resilient to webhook delays and
+ * works correctly in local dev without a webhook tunnel.
+ */
+export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
+  const { userId } = await auth();
+
+  if (!userId) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
-      message: "Unauthorized",
+      message: "You must be signed in to perform this action.",
     });
   }
 
-  return next({ ctx: { ...ctx, auth: session } });
+  // Try to find the existing profile first (hot path — one DB query)
+  let [user] = await db
+    .select()
+    .from(userProfiles)
+    .where(eq(userProfiles.clerkId, userId))
+    .limit(1);
+
+  // Upsert: webhook may not have fired yet (first request after sign-up)
+  if (!user) {
+    const clerkUser = await currentUser();
+    if (!clerkUser) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Could not resolve Clerk user.",
+      });
+    }
+
+    const email =
+      clerkUser.emailAddresses.find(
+        (e) => e.id === clerkUser.primaryEmailAddressId
+      )?.emailAddress ?? clerkUser.emailAddresses[0]?.emailAddress;
+
+    if (!email) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Clerk account has no email address.",
+      });
+    }
+
+    const [created] = await db
+      .insert(userProfiles)
+      .values({
+        clerkId: userId,
+        name: clerkUser.fullName ?? clerkUser.username ?? "User",
+        email,
+        image: clerkUser.imageUrl ?? null,
+        role: "STUDENT",
+        isOnboarded: false,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    // Re-fetch in case onConflictDoNothing() swallowed a concurrent insert
+    if (!created) {
+      const [existing] = await db
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.clerkId, userId))
+        .limit(1);
+      user = existing;
+    } else {
+      user = created;
+    }
+
+    if (!user) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create user profile.",
+      });
+    }
+  }
+
+  return next({ ctx: { ...ctx, userId, user } });
 });
 
-// Premium Protected Procedure
-export const premiumProcedure = (entity: "meetings" | "agents") =>
-  protectedProcedure.use(async ({ ctx, next }) => {
-    const customer = await polarClient.customers.getStateExternal({
-      externalId: ctx.auth.user.id,
-    });
+// ─── Admin Procedure ──────────────────────────────────────────────────────────
 
-    const [userMeetings] = await db
-      .select({
-        count: count(meetings.id),
-      })
-      .from(meetings)
-      .where(eq(meetings.userId, ctx.auth.user.id));
-
-    const [userAgents] = await db
-      .select({
-        count: count(agents.id),
-      })
-      .from(agents)
-      .where(eq(agents.userId, ctx.auth.user.id));
-
-    const isPremiumUser = customer.activeSubscriptions.length > 0;
-
-    const isFreeAgentLimitReached = userAgents.count >= MAX_FREE_AGENTS;
-    const isFreeMeetingsLimitReached = userMeetings.count >= MAX_FREE_MEETINGS;
-
-    const shouldThrowMeetingError =
-      entity === "meetings" && isFreeMeetingsLimitReached && !isPremiumUser;
-
-    const shouldThrowAgentError =
-      entity === "agents" && isFreeAgentLimitReached && !isPremiumUser;
-
-    if (shouldThrowMeetingError) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "You have reached the maximum number of free meetings",
-      });
-    }
-
-    if (shouldThrowAgentError) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "You have reached the maximum number of free agents",
-      });
-    }
-
-    return next({ ctx: { ...ctx, customer } });
-  });
-
+/**
+ * adminProcedure — Extends protectedProcedure; throws FORBIDDEN if the
+ * authenticated user does not have the ADMIN role.
+ */
 export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  // Check if user is admin
-  const [userRecord] = await db
-    .select({ role: user.role })
-    .from(user)
-    .where(eq(user.id, ctx.auth.user.id));
-
-  if (!userRecord || userRecord.role !== "ADMIN") {
+  if (ctx.user.role !== "ADMIN") {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `Admin access required. Current role: ${
-        userRecord?.role || "none"
-      }`,
+      message: `Admin access required. Your role: ${ctx.user.role}`,
     });
   }
 

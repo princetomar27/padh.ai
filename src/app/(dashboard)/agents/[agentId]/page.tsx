@@ -34,3 +34,6 @@
 // };
 
 // export default Page;
+
+const AgentIdPage = () => null;
+export default AgentIdPage;

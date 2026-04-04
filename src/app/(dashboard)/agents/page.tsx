@@ -40,3 +40,6 @@
 // };
 
 // export default AgentsPage;
+
+const AgentsPage = () => null;
+export default AgentsPage;

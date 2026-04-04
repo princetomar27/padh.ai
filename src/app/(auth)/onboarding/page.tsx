@@ -1,31 +1,31 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { ErrorBoundary } from "react-error-boundary";
 import {
   OnboardingView,
   OnboardingViewError,
   OnboardingViewLoading,
 } from "@/modules/auth/ui/views/onboarding-view";
-import { headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { Suspense } from "react";
-import { ErrorBoundary } from "react-error-boundary";
 
+/**
+ * Onboarding page — collects class, school, and role from the student.
+ * Only reachable when Clerk session exists but isOnboarded = false.
+ * Middleware enforces this; this page adds a server-side safety check.
+ */
 const OnboardingPage = async () => {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  const { userId } = await auth();
 
-  if (!session) {
+  if (!userId) {
     redirect("/sign-in");
   }
 
   return (
-    <>
-      <Suspense fallback={<OnboardingViewLoading />}>
-        <ErrorBoundary fallback={<OnboardingViewError />}>
-          <OnboardingView />
-        </ErrorBoundary>
-      </Suspense>
-    </>
+    <Suspense fallback={<OnboardingViewLoading />}>
+      <ErrorBoundary fallback={<OnboardingViewError />}>
+        <OnboardingView />
+      </ErrorBoundary>
+    </Suspense>
   );
 };
 

@@ -1,5 +1,6 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
-import { authClient } from "@/lib/auth-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,7 +9,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
 import {
   Drawer,
   DrawerContent,
@@ -18,31 +18,31 @@ import {
   DrawerFooter,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { GeneratedAvatar } from "@/components/generated-avatar";
-import { ChevronDown, CreditCardIcon, LogOutIcon } from "lucide-react";
+import { ChevronDown, LogOutIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useUser, useClerk } from "@clerk/nextjs";
 
 const DashboardUserButton = () => {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { data, isPending } = authClient.useSession();
+  const { user, isLoaded } = useUser();
+  const { signOut } = useClerk();
 
   const handleLogout = async () => {
-    authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          router.push("/sign-in");
-        },
-      },
-    });
+    await signOut();
+    router.push("/sign-in");
   };
 
-  if (isPending || !data?.user) {
+  if (!isLoaded || !user) {
     return null;
   }
+
+  const userName = user.fullName ?? user.username ?? "User";
+  const userEmail = user.primaryEmailAddress?.emailAddress ?? "";
+  const userImage = user.imageUrl;
 
   if (isMobile) {
     return (
@@ -53,49 +53,31 @@ const DashboardUserButton = () => {
     justify-between bg-ai-secondary/20 hover:bg-ai-secondary/60 overflow-hidden gap-x-2"
         >
           <div>
-            {data.user.image ? (
+            {userImage ? (
               <Avatar>
-                <AvatarImage src={data.user.image} />
+                <AvatarImage src={userImage} />
               </Avatar>
             ) : (
               <GeneratedAvatar
-                seed={data.user.name}
+                seed={userName}
                 variant="initials"
                 className="size-9 mr-3"
               />
             )}
             <div className="flex flex-col gap-0.5 text-left overflow-hidden flex-1 min-w-0">
-              <p className="text-sm truncate w-full font-semibold">
-                {data.user.name}
-              </p>
-              <p className="text-xs truncate w-full text-accent">
-                {data.user.email}
-              </p>
+              <p className="text-sm truncate w-full font-semibold">{userName}</p>
+              <p className="text-xs truncate w-full text-accent">{userEmail}</p>
             </div>
             <ChevronDown className="size-4 shrink-0" />
           </div>
         </DrawerTrigger>
         <DrawerContent>
           <DrawerHeader>
-            <DrawerTitle>{data.user.name}</DrawerTitle>
-            <DrawerDescription>{data.user.email}</DrawerDescription>
+            <DrawerTitle>{userName}</DrawerTitle>
+            <DrawerDescription>{userEmail}</DrawerDescription>
           </DrawerHeader>
           <DrawerFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                authClient.customer.portal();
-              }}
-            >
-              <CreditCardIcon className="size-4 text-black" />
-              Billing
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                handleLogout();
-              }}
-            >
+            <Button variant="outline" onClick={handleLogout}>
               <LogOutIcon className="size-4 text-black" />
               Logout
             </Button>
@@ -108,47 +90,36 @@ const DashboardUserButton = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className=" rounded-lg border border-primary p-3 w-full flex items-center
-    justify-between bg-ai-secondary/20 hover:bg-ai-secondary/60 overflow-hidden gap-x-2 "
+        className="rounded-lg border border-primary p-3 w-full flex items-center
+    justify-between bg-ai-secondary/20 hover:bg-ai-secondary/60 overflow-hidden gap-x-2"
       >
-        {data.user.image ? (
+        {userImage ? (
           <Avatar>
-            <AvatarImage src={data.user.image} />
+            <AvatarImage src={userImage} />
           </Avatar>
         ) : (
           <GeneratedAvatar
-            seed={data.user.name}
+            seed={userName}
             variant="initials"
             className="size-9 mr-3"
           />
         )}
         <div className="flex flex-col gap-0.5 text-left overflow-hidden flex-1 min-w-0">
-          <p className="text-sm truncate w-full font-semibold">
-            {data.user.name}
-          </p>
-          <p className="text-xs truncate w-full text-accent">
-            {data.user.email}
-          </p>
+          <p className="text-sm truncate w-full font-semibold">{userName}</p>
+          <p className="text-xs truncate w-full text-accent">{userEmail}</p>
         </div>
         <ChevronDown className="size-4 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="right" className="w-72 ml-2">
         <DropdownMenuLabel>
           <div className="flex flex-col gap-1">
-            <span className="font-medium truncate">{data.user.name}</span>
+            <span className="font-medium truncate">{userName}</span>
             <span className="text-sm text-muted-foreground truncate">
-              {data.user.email}
+              {userEmail}
             </span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => authClient.customer.portal()}
-          className="cursor-pointer flex items-center justify-between"
-        >
-          Billing
-          <CreditCardIcon className="size-4" />
-        </DropdownMenuItem>
         <DropdownMenuItem
           className="cursor-pointer flex items-center justify-between"
           onClick={handleLogout}

@@ -36,3 +36,6 @@
 // };
 
 // export default MeetingsIdPage;
+
+const MeetingIdPage = () => null;
+export default MeetingIdPage;
