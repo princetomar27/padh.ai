@@ -4,6 +4,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import sharp from "sharp";
 import type { PDFDocumentProxy, TextItem as PdfjsTextItem } from "pdfjs-dist/types/src/display/api";
 import { PDF_RENDER_SCALE } from "./constants";
+import { sanitizePostgresUtf8Text } from "./sanitize-postgres-text";
 
 export type StoredTextItem = {
   str: string;
@@ -75,7 +76,7 @@ export async function processPdfPage(
 
   const textContent = await page.getTextContent();
   const items = textContent.items.filter(isPdfjsTextItem).map((item) => ({
-    str: item.str,
+    str: sanitizePostgresUtf8Text(item.str),
     transform: [...item.transform] as number[],
     width: item.width,
     height: typeof item.height === "number" && item.height > 0 ? item.height : 0,

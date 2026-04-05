@@ -20,6 +20,8 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/webhooks(.*)",
+  /** Inngest Dev + Cloud call this without Clerk; serve() verifies INNGEST_SIGNING_KEY. */
+  "/api/inngest(.*)",
 ]);
 
 const isOnboardingRoute = createRouteMatcher(["/onboarding(.*)"]);

@@ -8,15 +8,23 @@ import {
 } from "@/db/schema";
 import { buildChunksFromPageMetadata } from "@/lib/book-pdf/build-chunks";
 import {
+  BOOK_PDF_CHUNK_BUILD_DB_PAGE_BATCH,
   BOOK_PDF_PAGES_PER_STEP,
   BOOK_PDF_PIPELINE_VERSION,
+  BOOK_PDF_VISION_LIST_DB_BATCH,
+  BOOK_VISION_CHUNKS_PER_STEP,
 } from "@/lib/book-pdf/constants";
+import {
+  describeDiagramChunkWithVision,
+  describeEquationChunkWithVision,
+} from "@/lib/book-pdf/describe-chunk-vision";
 import {
   chapterMetaForPage,
   extractChapterRanges,
   type ChapterRange,
 } from "@/lib/book-pdf/chapter-outline";
 import { loadPdfDocumentFromBuffer } from "@/lib/book-pdf/pdf-loader";
+import { sanitizePostgresUtf8Text } from "@/lib/book-pdf/sanitize-postgres-text";
 import {
   processPdfPage,
   type PageProcessMetadata,
@@ -24,7 +32,7 @@ import {
 import { fetchBookPdfBuffer } from "@/lib/supabase/fetch-book-pdf";
 import { ingest } from "@/inngest/client";
 import { put } from "@vercel/blob";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, max, or, sql } from "drizzle-orm";
 import { NonRetriableError } from "inngest";
 
 export type ProcessBookPdfEvent = {
@@ -66,11 +74,13 @@ export const processBookPdf = ingest.createFunction(
     name: "Process NCERT book PDF",
     retries: 3,
     concurrency: { limit: 1, key: "event.data.bookId" },
-    singleton: { key: "event.data.bookId", mode: "cancel" },
+    /** Long books (400+ pages) + many steps need a generous wall-clock budget. */
+    timeouts: { finish: "4h" },
   },
   { event: "padhai/book.process" },
-  async ({ event, step }) => {
+  async ({ event, step, runId }) => {
     const bookId = event.data.bookId;
+    const forceReprocess = event.data.forceReprocess ?? false;
 
     const init = await step.run("init-job", async () => {
       const [book] = await db
@@ -94,7 +104,7 @@ export const processBookPdf = ingest.createFunction(
         .insert(bookProcessingJobs)
         .values({
           bookId,
-          inngestRunId: null,
+          inngestRunId: runId,
           status: "PROCESSING",
           startedAt: new Date(),
           metadata: { pipelineVersion: BOOK_PDF_PIPELINE_VERSION },
@@ -123,6 +133,106 @@ export const processBookPdf = ingest.createFunction(
 
     try {
       const meta = await step.run("pdf-metadata-and-chapters", async () => {
+        const [pageCountRow] = await db
+          .select({ c: count() })
+          .from(bookPages)
+          .where(eq(bookPages.bookId, bookId));
+        const existingPageCount = Number(pageCountRow?.c ?? 0);
+        const [anyChapter] = await db
+          .select({ id: chapters.id })
+          .from(chapters)
+          .where(eq(chapters.bookId, bookId))
+          .limit(1);
+
+        const canResume =
+          !forceReprocess && existingPageCount > 0 && Boolean(anyChapter?.id);
+
+        if (canResume) {
+          const [bookRow] = await db
+            .select({ totalPages: books.totalPages })
+            .from(books)
+            .where(eq(books.id, bookId))
+            .limit(1);
+          const [maxPageRow] = await db
+            .select({ m: max(bookPages.pageNumber) })
+            .from(bookPages)
+            .where(eq(bookPages.bookId, bookId));
+
+          const buffer = await fetchBookPdfBuffer(storagePathOrUrl);
+          const pdfProbe = await loadPdfDocumentFromBuffer(buffer);
+          let pdfNumPages: number;
+          try {
+            pdfNumPages = pdfProbe.numPages;
+          } finally {
+            await pdfProbe.destroy();
+          }
+
+          const maxStored = Number(maxPageRow?.m ?? 0);
+          let numPages = Math.max(
+            bookRow?.totalPages ?? 0,
+            pdfNumPages,
+            maxStored,
+          );
+          if (numPages < 1) {
+            throw new Error("Resume failed: could not determine page count");
+          }
+
+          await db
+            .update(books)
+            .set({
+              totalPages: numPages,
+              updatedAt: new Date(),
+            })
+            .where(eq(books.id, bookId));
+
+          const chapterRows = await db
+            .select({
+              id: chapters.id,
+              chapterNumber: chapters.chapterNumber,
+              title: chapters.title,
+              startPage: chapters.startPage,
+              endPage: chapters.endPage,
+            })
+            .from(chapters)
+            .where(eq(chapters.bookId, bookId))
+            .orderBy(asc(chapters.chapterNumber));
+
+          const ranges: ChapterRange[] = chapterRows.map((r) => ({
+            chapterNumber: r.chapterNumber,
+            title: r.title,
+            startPage: r.startPage,
+            endPage: r.endPage,
+          }));
+
+          if (ranges.length > 0) {
+            const lastIdx = ranges.length - 1;
+            if (ranges[lastIdx].endPage < numPages) {
+              ranges[lastIdx] = {
+                ...ranges[lastIdx],
+                endPage: numPages,
+              };
+              await db
+                .update(chapters)
+                .set({
+                  endPage: numPages,
+                  updatedAt: new Date(),
+                })
+                .where(eq(chapters.id, chapterRows[lastIdx].id));
+            }
+          }
+
+          const chapterIdByNumber: Record<string, string> = {};
+          for (const r of chapterRows) {
+            chapterIdByNumber[String(r.chapterNumber)] = r.id;
+          }
+
+          return {
+            numPages,
+            ranges,
+            chapterIdByNumber,
+          };
+        }
+
         await db.delete(chapters).where(eq(chapters.bookId, bookId));
         await db.delete(bookPages).where(eq(bookPages.bookId, bookId));
 
@@ -146,7 +256,7 @@ export const processBookPdf = ingest.createFunction(
               bookId,
               subjectId,
               classId,
-              title: r.title,
+              title: sanitizePostgresUtf8Text(r.title),
               chapterNumber: r.chapterNumber,
               startPage: r.startPage,
               endPage: r.endPage,
@@ -190,6 +300,20 @@ export const processBookPdf = ingest.createFunction(
 
       for (const batch of batches) {
         await step.run(`pages-${batch.from}-${batch.to}`, async () => {
+          const existingInBatch = await db
+            .select({ pageNumber: bookPages.pageNumber })
+            .from(bookPages)
+            .where(
+              and(
+                eq(bookPages.bookId, bookId),
+                gte(bookPages.pageNumber, batch.from),
+                lte(bookPages.pageNumber, batch.to),
+              ),
+            );
+          const skipPages = new Set(
+            existingInBatch.map((r) => r.pageNumber),
+          );
+
           const buffer = await fetchBookPdfBuffer(storagePathOrUrl);
           const pdf = await loadPdfDocumentFromBuffer(buffer);
           try {
@@ -198,6 +322,10 @@ export const processBookPdf = ingest.createFunction(
               pageNumber <= batch.to;
               pageNumber++
             ) {
+              if (skipPages.has(pageNumber)) {
+                continue;
+              }
+
               const ch = chapterMetaForPage(pageNumber, ranges);
               const chapterId = chapterIdByNumber.get(ch.chapterNumber);
               if (!chapterId) {
@@ -206,46 +334,61 @@ export const processBookPdf = ingest.createFunction(
                 );
               }
 
-              const processed = await processPdfPage(pdf, pageNumber);
-              const blobPath = `books/${bookId}/pages/${pageNumber}.webp`;
-              const blob = await put(blobPath, processed.imageWebp, {
-                access: "public",
-                token: process.env.BLOB_READ_WRITE_TOKEN!,
-                contentType: "image/webp",
-              });
-
-              await db
-                .insert(bookPages)
-                .values({
-                  bookId,
-                  pageNumber,
-                  imageUrl: blob.url,
-                  textContent: processed.textContent,
-                  chapterTitle: ch.chapterTitle,
-                  chapterNumber: ch.chapterNumber,
-                  isChapterStart: ch.isChapterStart,
-                  hasEquations: processed.hasEquations,
-                  hasImages: processed.hasImages,
-                  metadata: processed.metadata,
-                })
-                .onConflictDoUpdate({
-                  target: [bookPages.bookId, bookPages.pageNumber],
-                  set: {
-                    imageUrl: sql`excluded.image_url`,
-                    textContent: sql`excluded.text_content`,
-                    chapterTitle: sql`excluded.chapter_title`,
-                    chapterNumber: sql`excluded.chapter_number`,
-                    isChapterStart: sql`excluded.is_chapter_start`,
-                    hasEquations: sql`excluded.has_equations`,
-                    hasImages: sql`excluded.has_images`,
-                    metadata: sql`excluded.metadata`,
-                    updatedAt: new Date(),
-                  },
+              try {
+                const processed = await processPdfPage(pdf, pageNumber);
+                const blobPath = `books/${bookId}/pages/${pageNumber}.webp`;
+                const blob = await put(blobPath, processed.imageWebp, {
+                  access: "public",
+                  token: process.env.BLOB_READ_WRITE_TOKEN!,
+                  contentType: "image/webp",
+                  // Inngest retries re-run the whole batch; paths are deterministic per page.
+                  allowOverwrite: true,
                 });
+
+                await db
+                  .insert(bookPages)
+                  .values({
+                    bookId,
+                    pageNumber,
+                    imageUrl: blob.url,
+                    textContent: sanitizePostgresUtf8Text(processed.textContent),
+                    chapterTitle: sanitizePostgresUtf8Text(ch.chapterTitle),
+                    chapterNumber: ch.chapterNumber,
+                    isChapterStart: ch.isChapterStart,
+                    hasEquations: processed.hasEquations,
+                    hasImages: processed.hasImages,
+                    metadata: processed.metadata,
+                  })
+                  .onConflictDoUpdate({
+                    target: [bookPages.bookId, bookPages.pageNumber],
+                    set: {
+                      imageUrl: sql`excluded.image_url`,
+                      textContent: sql`excluded.text_content`,
+                      chapterTitle: sql`excluded.chapter_title`,
+                      chapterNumber: sql`excluded.chapter_number`,
+                      isChapterStart: sql`excluded.is_chapter_start`,
+                      hasEquations: sql`excluded.has_equations`,
+                      hasImages: sql`excluded.has_images`,
+                      metadata: sql`excluded.metadata`,
+                      updatedAt: new Date(),
+                    },
+                  });
+              } catch (err) {
+                const detail = err instanceof Error ? err.message : String(err);
+                throw new Error(
+                  `Book ${bookId} page ${pageNumber} failed: ${detail}`,
+                );
+              }
             }
           } finally {
             await pdf.destroy();
           }
+
+          return {
+            from: batch.from,
+            to: batch.to,
+            pageCount: batch.to - batch.from + 1,
+          };
         });
 
         await db
@@ -269,20 +412,6 @@ export const processBookPdf = ingest.createFunction(
           .where(eq(chapters.bookId, bookId))
           .orderBy(chapters.chapterNumber);
 
-        const pages = await db
-          .select()
-          .from(bookPages)
-          .where(eq(bookPages.bookId, bookId))
-          .orderBy(bookPages.pageNumber);
-
-        const pagesByChapter = new Map<string, typeof pages>();
-        for (const ch of chapterRows) {
-          const list = pages.filter(
-            (p) => p.pageNumber >= ch.startPage && p.pageNumber <= ch.endPage,
-          );
-          pagesByChapter.set(ch.id, list);
-        }
-
         const chapterIds = chapterRows.map((c) => c.id);
         if (chapterIds.length) {
           await db
@@ -291,45 +420,71 @@ export const processBookPdf = ingest.createFunction(
         }
 
         let chunksTotal = 0;
+        const pageBatch = BOOK_PDF_CHUNK_BUILD_DB_PAGE_BATCH;
 
         for (const ch of chapterRows) {
-          const list = pagesByChapter.get(ch.id) ?? [];
           let order = 0;
-          for (const page of list) {
-            const pageMeta = page.metadata as PageProcessMetadata | null;
-            if (
-              !pageMeta ||
-              typeof pageMeta.pageWidth !== "number" ||
-              typeof pageMeta.pageHeight !== "number" ||
-              !Array.isArray(pageMeta.textItems)
-            ) {
-              continue;
+          for (
+            let winStart = ch.startPage;
+            winStart <= ch.endPage;
+            winStart += pageBatch
+          ) {
+            const winEnd = Math.min(
+              winStart + pageBatch - 1,
+              ch.endPage,
+            );
+            const batchPages = await db
+              .select({
+                id: bookPages.id,
+                pageNumber: bookPages.pageNumber,
+                metadata: bookPages.metadata,
+              })
+              .from(bookPages)
+              .where(
+                and(
+                  eq(bookPages.bookId, bookId),
+                  gte(bookPages.pageNumber, winStart),
+                  lte(bookPages.pageNumber, winEnd),
+                ),
+              )
+              .orderBy(bookPages.pageNumber);
+
+            for (const page of batchPages) {
+              const pageMeta = page.metadata as PageProcessMetadata | null;
+              if (
+                !pageMeta ||
+                typeof pageMeta.pageWidth !== "number" ||
+                typeof pageMeta.pageHeight !== "number" ||
+                !Array.isArray(pageMeta.textItems)
+              ) {
+                continue;
+              }
+
+              const { chunks, nextOrder } = buildChunksFromPageMetadata(
+                pageMeta,
+                order,
+              );
+              order = nextOrder;
+
+              if (chunks.length === 0) continue;
+
+              await db.insert(pdfChunks).values(
+                chunks.map((c) => ({
+                  bookPageId: page.id,
+                  chapterId: ch.id,
+                  chunkIndex: c.chunkIndex,
+                  orderInChapter: c.orderInChapter,
+                  text: c.text,
+                  boundingBoxes: c.boundingBoxes,
+                  isEquation: c.isEquation,
+                  equationDescription: null,
+                  isImage: c.isImage,
+                  imageDescription: null,
+                  speakText: c.speakText,
+                })),
+              );
+              chunksTotal += chunks.length;
             }
-
-            const { chunks, nextOrder } = buildChunksFromPageMetadata(
-              pageMeta,
-              order,
-            );
-            order = nextOrder;
-
-            if (chunks.length === 0) continue;
-
-            await db.insert(pdfChunks).values(
-              chunks.map((c) => ({
-                bookPageId: page.id,
-                chapterId: ch.id,
-                chunkIndex: c.chunkIndex,
-                orderInChapter: c.orderInChapter,
-                text: c.text,
-                boundingBoxes: c.boundingBoxes,
-                isEquation: c.isEquation,
-                equationDescription: null,
-                isImage: c.isImage,
-                imageDescription: null,
-                speakText: c.speakText,
-              })),
-            );
-            chunksTotal += chunks.length;
           }
 
           await db
@@ -344,6 +499,92 @@ export const processBookPdf = ingest.createFunction(
 
         return { chunksTotal };
       });
+
+      const visionTargets = await step.run("vision-list-targets", async () => {
+        const list: {
+          chunkId: string;
+          isEquation: boolean;
+          isImage: boolean;
+          text: string;
+          imageUrl: string;
+        }[] = [];
+        const batchSize = BOOK_PDF_VISION_LIST_DB_BATCH;
+        for (let offset = 0; ; offset += batchSize) {
+          const rows = await db
+            .select({
+              chunkId: pdfChunks.id,
+              isEquation: pdfChunks.isEquation,
+              isImage: pdfChunks.isImage,
+              text: pdfChunks.text,
+              imageUrl: bookPages.imageUrl,
+            })
+            .from(pdfChunks)
+            .innerJoin(bookPages, eq(pdfChunks.bookPageId, bookPages.id))
+            .innerJoin(chapters, eq(pdfChunks.chapterId, chapters.id))
+            .where(
+              and(
+                eq(chapters.bookId, bookId),
+                or(eq(pdfChunks.isEquation, true), eq(pdfChunks.isImage, true)),
+              ),
+            )
+            .orderBy(asc(pdfChunks.id))
+            .limit(batchSize)
+            .offset(offset);
+          if (rows.length === 0) break;
+          for (const r of rows) {
+            list.push({
+              chunkId: r.chunkId,
+              isEquation: r.isEquation,
+              isImage: r.isImage,
+              text: r.text,
+              imageUrl: r.imageUrl,
+            });
+          }
+          if (rows.length < batchSize) break;
+        }
+        return list;
+      });
+
+      if (process.env.OPENAI_API_KEY && visionTargets.length > 0) {
+        for (let i = 0; i < visionTargets.length; i += BOOK_VISION_CHUNKS_PER_STEP) {
+          const slice = visionTargets.slice(i, i + BOOK_VISION_CHUNKS_PER_STEP);
+          await step.run(`vision-batch-${i}`, async () => {
+            const delay = (ms: number) =>
+              new Promise((resolve) => setTimeout(resolve, ms));
+
+            for (const row of slice) {
+              if (row.isEquation) {
+                const desc = await describeEquationChunkWithVision({
+                  pageImageUrl: row.imageUrl,
+                  extractedText: row.text,
+                });
+                await db
+                  .update(pdfChunks)
+                  .set({
+                    equationDescription: desc,
+                    speakText: desc,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(pdfChunks.id, row.chunkId));
+              } else if (row.isImage) {
+                const desc = await describeDiagramChunkWithVision({
+                  pageImageUrl: row.imageUrl,
+                  contextHint: row.text,
+                });
+                await db
+                  .update(pdfChunks)
+                  .set({
+                    imageDescription: desc,
+                    speakText: desc,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(pdfChunks.id, row.chunkId));
+              }
+              await delay(120);
+            }
+          });
+        }
+      }
 
       await step.run("finalize", async () => {
         await db

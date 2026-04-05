@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { PageProcessMetadata } from "./process-page";
+import { sanitizePostgresUtf8Text } from "./sanitize-postgres-text";
 
 export type ChunkInsert = {
   chunkIndex: number;
@@ -146,19 +147,22 @@ export function buildChunksFromPageMetadata(
 
   for (let pi = 0; pi < paragraphs.length; pi++) {
     const items = paragraphs[pi];
-    const text = items
+    const rawText = items
       .map((i) => i.str)
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
+    const text = sanitizePostgresUtf8Text(rawText);
     if (!text) continue;
 
     const rects = items.map(itemRect);
     const u = unionRect(rects);
     const isEquation = looksLikeEquation(text);
-    const speakText = isEquation
-      ? `There is a mathematical expression on this page: ${text}. Listen carefully and compare with how it is written in your book.`
-      : text;
+    const speakText = sanitizePostgresUtf8Text(
+      isEquation
+        ? `There is a mathematical expression on this page: ${text}. Listen carefully and compare with how it is written in your book.`
+        : text,
+    );
 
     chunks.push({
       chunkIndex: chunks.length,
