@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
+
   // ─── Temporary: Phase 2 Clerk migration ────────────────────────────────────
   // Old Samvaad modules (meetings, agents, call, premium) still have source files
   // with imports from packages that have been removed (Stream.io, Better Auth).

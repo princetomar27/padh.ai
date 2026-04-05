@@ -2,6 +2,8 @@ import { createTRPCRouter } from "../init";
 import { onboardingRouter } from "@/modules/auth/server/procedure";
 import { classesRouter } from "@/modules/classes/server/procedure";
 import { adminRouter } from "@/modules/admin/server/procedure";
+import { subjectsRouter } from "@/modules/subjects/server/procedure";
+import { booksRouter } from "@/modules/books/server/procedure";
 
 /**
  * Root tRPC router for padh.ai.
@@ -15,6 +17,8 @@ export const appRouter = createTRPCRouter({
   auth: onboardingRouter,
   classes: classesRouter,
   admin: adminRouter,
+  subjects: subjectsRouter,
+  books: booksRouter,
 });
 
 export type AppRouter = typeof appRouter;
