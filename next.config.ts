@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /**
+   * Default is 10MB. Admin PDF uploads go through Clerk middleware; larger bodies
+   * make req.formData() throw → "Invalid form data" unless this is raised.
+   * Keep ≥ upload route MAX_BYTES (~55MB).
+   */
+  experimental: {
+    middlewareClientMaxBodySize: "60mb",
+  },
+
   serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
 
   // ─── Temporary: Phase 2 Clerk migration ────────────────────────────────────
