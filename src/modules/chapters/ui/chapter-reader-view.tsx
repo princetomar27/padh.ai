@@ -2,12 +2,12 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTRPC } from "@/trpc/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Loader2, TextQuote } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useChapterReaderScrollSync } from "./use-chapter-reader-scroll-sync";
 
 const PAGE_SIZE = 80;
 
@@ -24,6 +24,9 @@ export function ChapterReaderView({
 }: ChapterReaderViewProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const leftScrollRef = useRef<HTMLDivElement>(null);
+  const rightScrollRef = useRef<HTMLDivElement>(null);
+
   const [accumulated, setAccumulated] = useState<
     {
       id: string;
@@ -37,6 +40,13 @@ export function ChapterReaderView({
 
   const { data: meta, isPending: metaPending, error: metaError } = useQuery(
     trpc.chapters.getReaderMeta.queryOptions({ id: chapterId }),
+  );
+
+  const { data: bookPagesData, isPending: pagesPending } = useQuery(
+    trpc.chapters.getReaderBookPages.queryOptions(
+      { id: chapterId },
+      { enabled: Boolean(meta && !metaError) },
+    ),
   );
 
   const resetAndFetchFirst = useCallback(async () => {
@@ -76,6 +86,16 @@ export function ChapterReaderView({
     }
   };
 
+  useChapterReaderScrollSync({
+    leftRef: leftScrollRef,
+    rightRef: rightScrollRef,
+    enabled:
+      Boolean(bookPagesData?.pages.length && accumulated.length > 0) &&
+      !metaPending &&
+      !pagesPending,
+    syncKey: `${chapterId}-${bookPagesData?.pages.length ?? 0}-${accumulated.length}`,
+  });
+
   if (metaPending) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
@@ -106,9 +126,11 @@ export function ChapterReaderView({
         ? "Student reader"
         : viewerRole;
 
+  const bookPages = bookPagesData?.pages ?? [];
+
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden px-4 py-4 lg:px-6 lg:py-6">
+      <div className="shrink-0 flex flex-wrap items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" asChild>
           <Link href={backHref} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
@@ -121,7 +143,7 @@ export function ChapterReaderView({
         </Badge>
       </div>
 
-      <div>
+      <div className="shrink-0 mb-4">
         <h1 className="text-2xl font-semibold tracking-tight">
           {chapter.title}
         </h1>
@@ -134,56 +156,123 @@ export function ChapterReaderView({
           )}
         </p>
         {chapter.description ? (
-          <p className="text-sm mt-3 text-foreground/90">{chapter.description}</p>
+          <p className="text-sm mt-3 text-foreground/90 max-w-3xl">
+            {chapter.description}
+          </p>
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Full chapter text</CardTitle>
-          <p className="text-sm text-muted-foreground font-normal">
-            Processed segments (speakText) in reading order — same content the AI
-            tutor uses, without PDF coordinates.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {accumulated.length === 0 && nextAfter === null && !loadingMore ? (
-            <p className="text-muted-foreground text-sm py-6 text-center">
-              No segments yet. Re-run book processing if this should not be empty.
-            </p>
-          ) : (
-            <ol className="space-y-4 list-decimal pl-5 text-sm leading-relaxed">
-              {accumulated.map((c) => (
-                <li key={c.id} className="pl-1">
-                  <span className="text-xs text-muted-foreground tabular-nums block mb-1">
-                    Segment {c.orderInChapter + 1} · PDF page {c.pageNumber}
-                  </span>
-                  <span className="whitespace-pre-wrap">{c.speakText}</span>
-                </li>
-              ))}
-            </ol>
-          )}
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row rounded-lg border border-border bg-card overflow-hidden shadow-sm">
+        <div className="flex flex-col min-h-0 min-w-0 flex-1 lg:max-w-[50%] border-b lg:border-b-0 lg:border-r border-border">
+          <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/40">
+            <TextQuote className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Chapter text</span>
+            <span className="text-xs text-muted-foreground">
+              Scroll syncs with the book by page
+            </span>
+          </div>
+          <div
+            ref={leftScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4"
+          >
+            {accumulated.length === 0 && nextAfter === null && !loadingMore ? (
+              <p className="text-muted-foreground text-sm py-6 text-center">
+                No segments yet. Re-run book processing if this should not be
+                empty.
+              </p>
+            ) : (
+              <ol className="space-y-6 list-decimal pl-5 text-sm leading-relaxed">
+                {accumulated.map((c, idx) => {
+                  const isFirstOnPage =
+                    idx === 0 ||
+                    accumulated[idx - 1]!.pageNumber !== c.pageNumber;
+                  return (
+                    <li
+                      key={c.id}
+                      className="pl-1 scroll-mt-4"
+                      data-reader-page={c.pageNumber}
+                      {...(isFirstOnPage
+                        ? { "data-reader-anchor": "segment" as const }
+                        : {})}
+                    >
+                      <span className="text-xs text-muted-foreground tabular-nums block mb-1">
+                        Segment {c.orderInChapter + 1} · PDF page{" "}
+                        {c.pageNumber}
+                      </span>
+                      <span className="whitespace-pre-wrap">{c.speakText}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
 
-          {nextAfter != null && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full"
-              disabled={loadingMore}
-              onClick={() => void loadMore()}
-            >
-              {loadingMore ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Loading…
-                </>
-              ) : (
-                "Load more"
-              )}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+            {nextAfter != null && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full mt-6"
+                disabled={loadingMore}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Loading…
+                  </>
+                ) : (
+                  "Load more"
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col min-h-0 min-w-0 flex-1 bg-muted/20">
+          <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/40">
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Textbook pages</span>
+            {pagesPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            )}
+          </div>
+          <div
+            ref={rightScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-6"
+          >
+            {pagesPending ? (
+              <div className="flex justify-center py-12 text-muted-foreground text-sm">
+                Loading pages…
+              </div>
+            ) : bookPages.length === 0 ? (
+              <p className="text-muted-foreground text-sm text-center py-8">
+                No page images for this chapter span yet.
+              </p>
+            ) : (
+              bookPages.map((p) => (
+                <figure
+                  key={p.pageNumber}
+                  className="rounded-md border border-border bg-background p-2 shadow-sm scroll-mt-4"
+                  data-reader-page={p.pageNumber}
+                  data-reader-anchor="page"
+                >
+                  <figcaption className="text-xs text-muted-foreground mb-2 tabular-nums">
+                    Page {p.pageNumber}
+                  </figcaption>
+                  <div className="relative w-full overflow-hidden rounded">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Vercel Blob URLs */}
+                    <img
+                      src={p.imageUrl}
+                      alt={`Textbook page ${p.pageNumber}`}
+                      className="h-auto w-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                </figure>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

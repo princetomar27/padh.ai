@@ -82,8 +82,15 @@ export async function POST(req: Request) {
   let formData: FormData;
   try {
     formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+  } catch (err) {
+    console.error("[upload-pdf] formData() failed:", err);
+    return NextResponse.json(
+      {
+        error:
+          "Could not read upload (body may be too large). If this is a big PDF, ensure next.config sets experimental.middlewareClientMaxBodySize to at least 60mb.",
+      },
+      { status: 400 },
+    );
   }
 
   const file = formData.get("file");

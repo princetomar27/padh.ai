@@ -13,7 +13,7 @@ import {
   protectedProcedure,
 } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lte } from "drizzle-orm";
 import {
   chapterIdInputSchema,
   readerChunksInputSchema,
@@ -267,6 +267,37 @@ export const chaptersRouter = createTRPCRouter({
           className: chapter.className,
         },
       };
+    }),
+
+  /**
+   * Rendered PDF page images for the chapter span (Vercel Blob URLs).
+   * Used by the split reader: textbook panel + processed segments + scroll sync.
+   */
+  getReaderBookPages: protectedProcedure
+    .input(chapterIdInputSchema)
+    .query(async ({ ctx, input }) => {
+      const ch = await assertChapterReaderAccess({
+        userRole: ctx.user.role,
+        userClass: ctx.user.class,
+        chapterId: input.id,
+      });
+
+      const pages = await db
+        .select({
+          pageNumber: bookPages.pageNumber,
+          imageUrl: bookPages.imageUrl,
+        })
+        .from(bookPages)
+        .where(
+          and(
+            eq(bookPages.bookId, ch.bookId),
+            gte(bookPages.pageNumber, ch.startPage),
+            lte(bookPages.pageNumber, ch.endPage),
+          ),
+        )
+        .orderBy(asc(bookPages.pageNumber));
+
+      return { pages };
     }),
 
   /** Student study hub: completed, active chapters for the learner's class. */
