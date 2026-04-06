@@ -14,6 +14,7 @@ export function getOpenAI(): OpenAI {
   return client;
 }
 
+/** OpenAI chat vision model (used when Gemini vision is not configured). */
 export function getVisionModel(): string {
   return process.env.OPENAI_VISION_MODEL?.trim() || "gpt-4o";
 }

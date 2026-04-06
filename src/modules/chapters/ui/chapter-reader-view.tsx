@@ -4,9 +4,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useTRPC } from "@/trpc/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BookOpen, Loader2, TextQuote } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Headphones,
+  Loader2,
+  TextQuote,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useChapterReaderScrollSync } from "./use-chapter-reader-scroll-sync";
 
 const PAGE_SIZE = 80;
@@ -24,6 +33,7 @@ export function ChapterReaderView({
 }: ChapterReaderViewProps) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const router = useRouter();
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
 
@@ -38,8 +48,22 @@ export function ChapterReaderView({
   const [nextAfter, setNextAfter] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const { data: meta, isPending: metaPending, error: metaError } = useQuery(
-    trpc.chapters.getReaderMeta.queryOptions({ id: chapterId }),
+  const {
+    data: meta,
+    isPending: metaPending,
+    error: metaError,
+  } = useQuery(trpc.chapters.getReaderMeta.queryOptions({ id: chapterId }));
+
+  const startSession = useMutation(
+    trpc.learning.startOrResumeSession.mutationOptions({
+      onSuccess: (res) => {
+        void queryClient.invalidateQueries(
+          trpc.learning.listMySessions.queryOptions(),
+        );
+        router.push(`/study-materials/sessions/${res.session.id}`);
+      },
+      onError: (e) => toast.error(e.message),
+    }),
   );
 
   const { data: bookPagesData, isPending: pagesPending } = useQuery(
@@ -141,6 +165,23 @@ export function ChapterReaderView({
         <Badge variant="secondary">
           {chapter.processingStatus.replaceAll("_", " ")}
         </Badge>
+        {viewerRole === "STUDENT" &&
+        chapter.processingStatus === "COMPLETED" ? (
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2"
+            disabled={startSession.isPending}
+            onClick={() => startSession.mutate({ chapterId })}
+          >
+            {startSession.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Headphones className="h-4 w-4" />
+            )}
+            AI voice session
+          </Button>
+        ) : null}
       </div>
 
       <div className="shrink-0 mb-4">
@@ -151,9 +192,7 @@ export function ChapterReaderView({
           {chapter.bookTitle} · {chapter.subjectName} · {chapter.className} ·
           Chapter {chapter.chapterNumber} · Pages {chapter.startPage}–
           {chapter.endPage}
-          {chapter.totalChunks > 0 && (
-            <> · {chapter.totalChunks} segments</>
-          )}
+          {chapter.totalChunks > 0 && <> · {chapter.totalChunks} segments</>}
         </p>
         {chapter.description ? (
           <p className="text-sm mt-3 text-foreground/90 max-w-3xl">
@@ -196,8 +235,7 @@ export function ChapterReaderView({
                         : {})}
                     >
                       <span className="text-xs text-muted-foreground tabular-nums block mb-1">
-                        Segment {c.orderInChapter + 1} · PDF page{" "}
-                        {c.pageNumber}
+                        Segment {c.orderInChapter + 1} · PDF page {c.pageNumber}
                       </span>
                       <span className="whitespace-pre-wrap">{c.speakText}</span>
                     </li>

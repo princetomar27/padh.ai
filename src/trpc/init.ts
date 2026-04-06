@@ -62,7 +62,7 @@ export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
 
     const email =
       clerkUser.emailAddresses.find(
-        (e) => e.id === clerkUser.primaryEmailAddressId
+        (e) => e.id === clerkUser.primaryEmailAddressId,
       )?.emailAddress ?? clerkUser.emailAddresses[0]?.emailAddress;
 
     if (!email) {
@@ -124,3 +124,22 @@ export const adminProcedure = protectedProcedure.use(async ({ ctx, next }) => {
 
   return next({ ctx });
 });
+
+/** Learning / study flows — students only. */
+export const studentProcedure = protectedProcedure.use(
+  async ({ ctx, next }) => {
+    if (ctx.user.role !== "STUDENT") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "This action is only available to students.",
+      });
+    }
+    if (ctx.user.class == null) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Set your class in onboarding to use study features.",
+      });
+    }
+    return next({ ctx });
+  },
+);

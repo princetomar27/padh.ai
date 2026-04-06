@@ -1,5 +1,5 @@
 import { useTRPC } from "@/trpc/client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,10 +17,7 @@ import {
 import { toast } from "sonner";
 import { MeetingGetOne } from "../types";
 import { meetingsInsertSchema } from "../schema";
-import { useState } from "react";
 import { CommandSelect } from "@/components/command-select";
-import { GeneratedAvatar } from "@/components/generated-avatar";
-import { NewAgentDialog } from "@/modules/agents/components/new-agent-dialog";
 import { useRouter } from "next/navigation";
 
 interface MeetingProps {
@@ -37,26 +34,16 @@ export const MeetingForm = ({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const [openNewAgentDialog, setOpenNewAgentDialog] = useState(false);
-  const [agentSearch, setAgentSearch] = useState("");
-
-  // We are using useQuery to prefetch the agents, because we need to show them in the form and we dont know when the user will select an agent
-  const agents = useQuery(
-    trpc.agents.getMany.queryOptions({
-      pageSize: 100,
-      search: agentSearch,
-    })
-  );
 
   const createMeeting = useMutation(
     trpc.meetings.createMeeting.mutationOptions({
       onSuccess: async (data) => {
         await queryClient.invalidateQueries(
-          trpc.meetings.getMany.queryOptions({})
+          trpc.meetings.getMany.queryOptions({}),
         );
 
         await queryClient.invalidateQueries(
-          trpc.premium.getFreeUsage.queryOptions()
+          trpc.premium.getFreeUsage.queryOptions(),
         );
 
         onSuccess?.(data.id);
@@ -68,21 +55,21 @@ export const MeetingForm = ({
           router.push("/upgrade");
         }
       },
-    })
+    }),
   );
 
   const updateMeeting = useMutation(
     trpc.meetings.updateMeeting.mutationOptions({
       onSuccess: async () => {
         await queryClient.invalidateQueries(
-          trpc.meetings.getMany.queryOptions({})
+          trpc.meetings.getMany.queryOptions({}),
         );
 
         if (initialValues?.id) {
           await queryClient.invalidateQueries(
             trpc.meetings.getOne.queryOptions({
               id: initialValues.id,
-            })
+            }),
           );
         }
 
@@ -91,7 +78,7 @@ export const MeetingForm = ({
       onError: (error) => {
         toast.error(error.message);
       },
-    })
+    }),
   );
 
   const form = useForm<z.infer<typeof meetingsInsertSchema>>({
@@ -115,10 +102,6 @@ export const MeetingForm = ({
 
   return (
     <>
-      <NewAgentDialog
-        open={openNewAgentDialog}
-        onOpenChange={setOpenNewAgentDialog}
-      />
       <Form {...form}>
         <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
           <FormField
@@ -145,35 +128,15 @@ export const MeetingForm = ({
                 <FormLabel>Agent ID</FormLabel>
                 <FormControl>
                   <CommandSelect
-                    options={(agents.data?.items ?? []).map((agent) => ({
-                      id: agent.id,
-                      value: agent.id,
-                      children: (
-                        <div className="flex items-center gap-x-2">
-                          <GeneratedAvatar
-                            seed={agent.name}
-                            variant="bottsNeutral"
-                            className="border size-6"
-                          />
-                          <span>{agent.name}</span>
-                        </div>
-                      ),
-                    }))}
+                    options={[]}
                     onSelect={field.onChange}
-                    onSearch={setAgentSearch}
                     value={field.value}
-                    placeholder="Select an agent"
+                    placeholder="No agents (legacy meetings disabled)"
                   />
                 </FormControl>
                 <FormDescription>
-                  Not found what you&apos;re looking for?{" "}
-                  <button
-                    type="button"
-                    className=" text-primary hover:underline"
-                    onClick={() => setOpenNewAgentDialog(true)}
-                  >
-                    Create New Agent
-                  </button>
+                  Tutors are managed under Admin → AI tutors (seed per subject
+                  and class).
                 </FormDescription>
                 <FormMessage />
               </FormItem>

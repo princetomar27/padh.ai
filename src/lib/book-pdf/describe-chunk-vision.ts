@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  describeDiagramChunkWithGemini,
+  describeEquationChunkWithGemini,
+  geminiVisionConfigured,
+} from "@/lib/gemini/vision-chunk";
 import { getOpenAI, getVisionModel } from "@/lib/openai/server";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 
@@ -18,6 +23,10 @@ export async function describeEquationChunkWithVision(input: {
   pageImageUrl: string;
   extractedText: string;
 }): Promise<string> {
+  if (geminiVisionConfigured()) {
+    return describeEquationChunkWithGemini(input);
+  }
+
   const openai = getOpenAI();
   const model = getVisionModel();
 
@@ -56,6 +65,10 @@ export async function describeDiagramChunkWithVision(input: {
   pageImageUrl: string;
   contextHint?: string;
 }): Promise<string> {
+  if (geminiVisionConfigured()) {
+    return describeDiagramChunkWithGemini(input);
+  }
+
   const openai = getOpenAI();
   const model = getVisionModel();
 

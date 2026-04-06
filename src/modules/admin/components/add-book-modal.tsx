@@ -44,7 +44,9 @@ export function AddBookModal({ children }: AddBookModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
 
-  const { data: subjects = [] } = useQuery(trpc.subjects.listActive.queryOptions());
+  const { data: subjects = [] } = useQuery(
+    trpc.subjects.listActive.queryOptions(),
+  );
   const { data: classesData } = useQuery(
     trpc.classes.getMany.queryOptions({
       page: 1,
@@ -101,13 +103,49 @@ export function AddBookModal({ children }: AddBookModalProps) {
       return;
     }
 
-    const fd = new FormData();
-    fd.set("file", file);
+    const useDirect =
+      typeof process.env.NEXT_PUBLIC_USE_DIRECT_PDF_UPLOAD === "string" &&
+      process.env.NEXT_PUBLIC_USE_DIRECT_PDF_UPLOAD === "1";
 
     setUploadPct(0);
-    const xhr = new XMLHttpRequest();
-    const uploadPromise = new Promise<{ path: string; size: number }>(
-      (resolve, reject) => {
+
+    const uploadPromise = async (): Promise<{ path: string; size: number }> => {
+      if (useDirect) {
+        const signRes = await fetch("/api/admin/books/signed-upload-url", {
+          method: "POST",
+          credentials: "include",
+        });
+        const signJson = (await signRes.json()) as {
+          signedUrl?: string;
+          path?: string;
+          error?: string;
+        };
+        if (!signRes.ok || !signJson.signedUrl || !signJson.path) {
+          throw new Error(signJson.error ?? "Could not start direct upload");
+        }
+        setUploadPct(5);
+        const putRes = await fetch(signJson.signedUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": "application/pdf",
+          },
+        });
+        if (!putRes.ok) {
+          const t = await putRes.text();
+          throw new Error(
+            t.slice(0, 200) || `Direct upload failed (${putRes.status})`,
+          );
+        }
+        setUploadPct(100);
+        return { path: signJson.path, size: file.size };
+      }
+
+      const fd = new FormData();
+      fd.set("file", file);
+
+      return new Promise<{ path: string; size: number }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
         xhr.upload.onprogress = (ev) => {
           if (ev.lengthComputable) {
             setUploadPct(Math.round((ev.loaded / ev.total) * 100));
@@ -133,11 +171,11 @@ export function AddBookModal({ children }: AddBookModalProps) {
         xhr.open("POST", "/api/admin/books/upload-pdf");
         xhr.withCredentials = true;
         xhr.send(fd);
-      },
-    );
+      });
+    };
 
     try {
-      const { path, size } = await uploadPromise;
+      const { path, size } = await uploadPromise();
       setUploadPct(100);
       createBook.mutate({
         title: title.trim(),
@@ -178,7 +216,11 @@ export function AddBookModal({ children }: AddBookModalProps) {
           <DialogTitle className="text-2xl font-bold">Add New Book</DialogTitle>
           <DialogDescription className="text-base mt-2">
             Upload a PDF to Supabase storage, then we queue Inngest to extract
-            chapters and chunks.
+            chapters and chunks. With{" "}
+            <code className="text-xs bg-muted px-1 rounded">
+              NEXT_PUBLIC_USE_DIRECT_PDF_UPLOAD=1
+            </code>{" "}
+            the browser uploads directly to storage (skips the API body limit).
           </DialogDescription>
         </DialogHeader>
 

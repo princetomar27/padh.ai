@@ -29,10 +29,22 @@ import {
   processPdfPage,
   type PageProcessMetadata,
 } from "@/lib/book-pdf/process-page";
+import { geminiVisionConfigured } from "@/lib/gemini/vision-chunk";
 import { fetchBookPdfBuffer } from "@/lib/supabase/fetch-book-pdf";
 import { ingest } from "@/inngest/client";
 import { put } from "@vercel/blob";
-import { and, asc, count, eq, gte, inArray, lte, max, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  inArray,
+  lte,
+  max,
+  or,
+  sql,
+} from "drizzle-orm";
 import { NonRetriableError } from "inngest";
 
 export type ProcessBookPdfEvent = {
@@ -310,9 +322,7 @@ export const processBookPdf = ingest.createFunction(
                 lte(bookPages.pageNumber, batch.to),
               ),
             );
-          const skipPages = new Set(
-            existingInBatch.map((r) => r.pageNumber),
-          );
+          const skipPages = new Set(existingInBatch.map((r) => r.pageNumber));
 
           const buffer = await fetchBookPdfBuffer(storagePathOrUrl);
           const pdf = await loadPdfDocumentFromBuffer(buffer);
@@ -351,7 +361,9 @@ export const processBookPdf = ingest.createFunction(
                     bookId,
                     pageNumber,
                     imageUrl: blob.url,
-                    textContent: sanitizePostgresUtf8Text(processed.textContent),
+                    textContent: sanitizePostgresUtf8Text(
+                      processed.textContent,
+                    ),
                     chapterTitle: sanitizePostgresUtf8Text(ch.chapterTitle),
                     chapterNumber: ch.chapterNumber,
                     isChapterStart: ch.isChapterStart,
@@ -429,10 +441,7 @@ export const processBookPdf = ingest.createFunction(
             winStart <= ch.endPage;
             winStart += pageBatch
           ) {
-            const winEnd = Math.min(
-              winStart + pageBatch - 1,
-              ch.endPage,
-            );
+            const winEnd = Math.min(winStart + pageBatch - 1, ch.endPage);
             const batchPages = await db
               .select({
                 id: bookPages.id,
@@ -545,8 +554,14 @@ export const processBookPdf = ingest.createFunction(
         return list;
       });
 
-      if (process.env.OPENAI_API_KEY && visionTargets.length > 0) {
-        for (let i = 0; i < visionTargets.length; i += BOOK_VISION_CHUNKS_PER_STEP) {
+      const canVision =
+        Boolean(process.env.OPENAI_API_KEY?.trim()) || geminiVisionConfigured();
+      if (canVision && visionTargets.length > 0) {
+        for (
+          let i = 0;
+          i < visionTargets.length;
+          i += BOOK_VISION_CHUNKS_PER_STEP
+        ) {
           const slice = visionTargets.slice(i, i + BOOK_VISION_CHUNKS_PER_STEP);
           await step.run(`vision-batch-${i}`, async () => {
             const delay = (ms: number) =>
@@ -605,6 +620,26 @@ export const processBookPdf = ingest.createFunction(
             updatedAt: new Date(),
           })
           .where(eq(books.id, bookId));
+
+        const pendingQuestions = await db
+          .select({ id: chapters.id })
+          .from(chapters)
+          .where(
+            and(
+              eq(chapters.bookId, bookId),
+              eq(chapters.processingStatus, "COMPLETED"),
+              eq(chapters.questionsGenerated, false),
+            ),
+          );
+
+        if (pendingQuestions.length > 0) {
+          await ingest.send(
+            pendingQuestions.map((c) => ({
+              name: "padhai/chapter.generateImportantQuestions" as const,
+              data: { chapterId: c.id },
+            })),
+          );
+        }
       });
 
       return {
