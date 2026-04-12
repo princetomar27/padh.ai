@@ -1,5 +1,11 @@
 import "server-only";
 
+// FOR USING GEMINI
+// import {
+//   describeDiagramChunkWithGemini,
+//   describeEquationChunkWithGemini,
+//   geminiVisionConfigured,
+// } from "@/lib/gemini/vision-chunk";
 import { getOpenAI, getVisionModel } from "@/lib/openai/server";
 import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 
@@ -11,8 +17,13 @@ const DIAGRAM_SYSTEM = `You are helping an AI voice tutor describe a textbook di
 Use plain language. Mention labels, axes, arrows, and the main idea being illustrated.
 At most 5 short sentences. No markdown.`;
 
+/** Book pipeline uses OpenAI vision only; Gemini is reserved for voice (Live) calls. */
+export function bookVisionProcessingEnabled(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
 /**
- * Use GPT-4o vision on the full textbook page image to produce TTS-ready narration.
+ * GPT-4o (or OPENAI_VISION_MODEL) on the textbook page image → TTS-ready narration.
  */
 export async function describeEquationChunkWithVision(input: {
   pageImageUrl: string;

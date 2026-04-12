@@ -5,15 +5,10 @@ import { adminRouter } from "@/modules/admin/server/procedure";
 import { subjectsRouter } from "@/modules/subjects/server/procedure";
 import { booksRouter } from "@/modules/books/server/procedure";
 import { chaptersRouter } from "@/modules/chapters/server/procedure";
+import { agentsRouter } from "@/modules/agents/server/procedure";
+import { learningRouter } from "@/modules/learning/server/procedure";
 
-/**
- * Root tRPC router for padh.ai.
- *
- * Phase 2 (Clerk auth migration): Only auth, classes, and admin routers
- * are active. The old meetings, agents, and premium routers used Better Auth
- * and Stream.io references — they are excluded here and will be rebuilt in
- * Phase 3+ as padh.ai-specific modules (PDF pipeline, AI sessions, etc.).
- */
+/** Root tRPC router for padh.ai. */
 export const appRouter = createTRPCRouter({
   auth: onboardingRouter,
   classes: classesRouter,
@@ -21,6 +16,8 @@ export const appRouter = createTRPCRouter({
   subjects: subjectsRouter,
   books: booksRouter,
   chapters: chaptersRouter,
+  agents: agentsRouter,
+  learning: learningRouter,
 });
 
 export type AppRouter = typeof appRouter;

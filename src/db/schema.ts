@@ -142,10 +142,9 @@ export const userProfiles = pgTable(
       .notNull()
       .default("ENGLISH"),
     /** FK to a PARENT-role userProfiles row. Null until parent links child. */
-    parentId: text("parent_id").references(
-      (): AnyPgColumn => userProfiles.id,
-      { onDelete: "set null" }
-    ),
+    parentId: text("parent_id").references((): AnyPgColumn => userProfiles.id, {
+      onDelete: "set null",
+    }),
     isOnboarded: boolean("is_onboarded").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -154,7 +153,7 @@ export const userProfiles = pgTable(
     uniqueIndex("uq_user_profiles_clerk_id").on(t.clerkId),
     index("idx_user_profiles_parent_id").on(t.parentId),
     index("idx_user_profiles_role_class").on(t.role, t.class),
-  ]
+  ],
 );
 
 // ============================================================
@@ -224,7 +223,7 @@ export const classSubjects = pgTable(
     uniqueIndex("uq_class_subjects_class_subject").on(t.classId, t.subjectId),
     index("idx_class_subjects_class_id").on(t.classId),
     index("idx_class_subjects_subject_id").on(t.subjectId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -267,6 +266,20 @@ export const books = pgTable(
       .default("SUPABASE_STORAGE"),
     /** File size in bytes. */
     pdfSize: integer("pdf_size"),
+    /**
+     * When the book was created from one PDF per chapter, stores each chapter’s
+     * Supabase path/URL in order so reprocessing can re-run the same pipeline.
+     */
+    chapterIngestSources: jsonb("chapter_ingest_sources").$type<
+      | {
+          chapterNumber: number;
+          supabaseStorageUrl: string;
+          title?: string;
+        }[]
+      | null
+    >(),
+    /** Set for per-chapter uploads — should match `chapter_ingest_sources` length. */
+    expectedChapterCount: integer("expected_chapter_count"),
     totalPages: integer("total_pages").notNull().default(0),
     coverImage: text("cover_image"),
     processingStatus: processingStatus("processing_status")
@@ -280,7 +293,7 @@ export const books = pgTable(
   (t) => [
     index("idx_books_subject_class").on(t.subjectId, t.classId),
     index("idx_books_processing_status").on(t.processingStatus),
-  ]
+  ],
 );
 
 /**
@@ -323,7 +336,7 @@ export const bookPages = pgTable(
     uniqueIndex("uq_book_pages_book_page").on(t.bookId, t.pageNumber),
     index("idx_book_pages_book_id").on(t.bookId),
     index("idx_book_pages_chapter_number").on(t.bookId, t.chapterNumber),
-  ]
+  ],
 );
 
 /**
@@ -377,7 +390,7 @@ export const chapters = pgTable(
     index("idx_chapters_book_id").on(t.bookId),
     index("idx_chapters_subject_class").on(t.subjectId, t.classId),
     index("idx_chapters_processing_status").on(t.processingStatus),
-  ]
+  ],
 );
 
 // ============================================================
@@ -473,7 +486,7 @@ export const pdfChunks = pgTable(
     index("idx_pdf_chunks_book_page_id").on(t.bookPageId),
     /** Let the pipeline handle equation chunks separately. */
     index("idx_pdf_chunks_chapter_equation").on(t.chapterId, t.isEquation),
-  ]
+  ],
 );
 
 // ============================================================
@@ -516,7 +529,7 @@ export const bookProcessingJobs = pgTable(
     index("idx_book_processing_jobs_book_id").on(t.bookId),
     index("idx_book_processing_jobs_status").on(t.status),
     index("idx_book_processing_jobs_inngest_run").on(t.inngestRunId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -559,7 +572,7 @@ export const pyqPapers = pgTable(
   (t) => [
     index("idx_pyq_papers_class_subject").on(t.classId, t.subjectId),
     index("idx_pyq_papers_exam_year").on(t.examYear),
-  ]
+  ],
 );
 
 // ============================================================
@@ -614,12 +627,12 @@ export const importantQuestions = pgTable(
   (t) => [
     index("idx_important_questions_chapter_order").on(
       t.chapterId,
-      t.orderInChapter
+      t.orderInChapter,
     ),
     index("idx_important_questions_pyq_paper").on(t.pyqPaperId),
     index("idx_important_questions_difficulty").on(t.chapterId, t.difficulty),
     index("idx_important_questions_source").on(t.chapterId, t.source),
-  ]
+  ],
 );
 
 // ============================================================
@@ -663,10 +676,10 @@ export const agents = pgTable(
     uniqueIndex("uq_agents_subject_class_role").on(
       t.subjectId,
       t.classId,
-      t.agentRole
+      t.agentRole,
     ),
     index("idx_agents_subject_class").on(t.subjectId, t.classId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -747,18 +760,12 @@ export const learningSessions = pgTable(
   },
   (t) => [
     /** THE resume query: student + chapter + active/paused status. */
-    index("idx_learning_sessions_student_chapter").on(
-      t.studentId,
-      t.chapterId
-    ),
+    index("idx_learning_sessions_student_chapter").on(t.studentId, t.chapterId),
     index("idx_learning_sessions_student_status").on(t.studentId, t.status),
     index("idx_learning_sessions_chapter_status").on(t.chapterId, t.status),
     /** Parent dashboard: fetch all recent sessions for a child. */
-    index("idx_learning_sessions_student_created").on(
-      t.studentId,
-      t.createdAt
-    ),
-  ]
+    index("idx_learning_sessions_student_created").on(t.studentId, t.createdAt),
+  ],
 );
 
 // ============================================================
@@ -789,7 +796,7 @@ export const tests = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("idx_tests_chapter_id").on(t.chapterId)]
+  (t) => [index("idx_tests_chapter_id").on(t.chapterId)],
 );
 
 /** questions: Individual questions belonging to a mock test. */
@@ -826,7 +833,7 @@ export const questions = pgTable(
   (t) => [
     index("idx_questions_test_id").on(t.testId),
     index("idx_questions_chapter_id").on(t.chapterId),
-  ]
+  ],
 );
 
 /**
@@ -862,7 +869,7 @@ export const testAttempts = pgTable(
     index("idx_test_attempts_student_test").on(t.studentId, t.testId),
     index("idx_test_attempts_student").on(t.studentId),
     index("idx_test_attempts_test_id").on(t.testId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -913,14 +920,14 @@ export const studentProgress = pgTable(
   (t) => [
     uniqueIndex("uq_student_progress_student_chapter").on(
       t.studentId,
-      t.chapterId
+      t.chapterId,
     ),
     index("idx_student_progress_student").on(t.studentId),
     index("idx_student_progress_student_accessed").on(
       t.studentId,
-      t.lastAccessedAt
+      t.lastAccessedAt,
     ),
-  ]
+  ],
 );
 
 /**
@@ -961,14 +968,14 @@ export const learningAnalytics = pgTable(
     index("idx_learning_analytics_student").on(t.studentId),
     index("idx_learning_analytics_student_subject").on(
       t.studentId,
-      t.subjectId
+      t.subjectId,
     ),
     index("idx_learning_analytics_student_chapter").on(
       t.studentId,
-      t.chapterId
+      t.chapterId,
     ),
     index("idx_learning_analytics_recorded_at").on(t.recordedAt),
-  ]
+  ],
 );
 
 /**
@@ -1011,5 +1018,5 @@ export const pageInteractions = pgTable(
     index("idx_page_interactions_session").on(t.sessionId),
     index("idx_page_interactions_student").on(t.studentId),
     index("idx_page_interactions_chunk").on(t.pdfChunkId),
-  ]
+  ],
 );

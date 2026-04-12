@@ -47,7 +47,7 @@ export const DashboardSidebar = () => {
     return (
       <Sidebar>
         <SidebarHeader className="text-sidebar-accent-foreground">
-          <Link href="/" className="flex items-center gap-2 px-2 pt-2">
+          <Link href="/dashboard" className="flex items-center gap-2 px-2 pt-2">
             <Image alt="padh.ai" height={36} width={36} src="/padhai.svg" />
             <p className="text-2xl font-semibold">padh.ai</p>
           </Link>
@@ -86,7 +86,7 @@ export const DashboardSidebar = () => {
   return (
     <Sidebar>
       <SidebarHeader className="text-sidebar-accent-foreground">
-        <Link href="/" className="flex items-center gap-2 px-2 pt-2">
+        <Link href="/dashboard" className="flex items-center gap-2 px-2 pt-2">
           <Image alt="padh.ai" height={36} width={36} src="/padhai.svg" />
           <p className="text-2xl font-semibold">padh.ai</p>
         </Link>

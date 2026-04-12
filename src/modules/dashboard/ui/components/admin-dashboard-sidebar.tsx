@@ -89,8 +89,8 @@ const adminNavigationItems: NavigationItem[] = [
   },
   {
     icon: BotIcon,
-    label: "Agents",
-    href: "/agents",
+    label: "AI tutors",
+    href: "/admin/tutors",
   },
   {
     icon: UsersIcon,
@@ -154,7 +154,7 @@ export const AdminDashboardSidebar = () => {
             <CollapsibleTrigger asChild>
               <SidebarMenuButton
                 className={cn(
-                  "h-10 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50"
+                  "h-10 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50",
                 )}
               >
                 <div className="flex items-center gap-2 flex-1">
@@ -179,7 +179,7 @@ export const AdminDashboardSidebar = () => {
                       className={cn(
                         "h-8 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50",
                         pathName === child.href &&
-                          "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50"
+                          "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50",
                       )}
                       isActive={pathName === child.href}
                     >
@@ -210,7 +210,7 @@ export const AdminDashboardSidebar = () => {
           className={cn(
             " h-10 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50",
             pathName === item.href &&
-              "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50"
+              "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50",
           )}
           isActive={pathName === item.href}
         >
@@ -252,7 +252,7 @@ export const AdminDashboardSidebar = () => {
                   className={cn(
                     " h-10 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50",
                     pathName === item.href &&
-                      "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50"
+                      "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50",
                   )}
                   isActive={pathName === item.href}
                 >

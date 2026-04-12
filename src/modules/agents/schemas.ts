@@ -1,10 +1,29 @@
 import { z } from "zod";
 
-export const agentsInsertSchema = z.object({
-  name: z.string().min(1, { message: "Name is required" }),
-  instructions: z.string().min(1, { message: "Instructions are required" }),
+export const agentIdSchema = z.object({
+  agentId: z.string().min(1),
 });
 
-export const agentsUpdateSchema = agentsInsertSchema.extend({
-  id: z.string().min(1, { message: "Id is required" }),
+export const updateTutorAgentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).max(200).optional(),
+  instructions: z.string().min(10).max(50_000).optional(),
+  voiceId: z
+    .enum([
+      "alloy",
+      "ash",
+      "ballad",
+      "cedar",
+      "coral",
+      "echo",
+      "marin",
+      "sage",
+      "shimmer",
+      "verse",
+      "fable",
+      "onyx",
+      "nova",
+    ])
+    .optional(),
+  isActive: z.boolean().optional(),
 });

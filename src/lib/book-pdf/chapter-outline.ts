@@ -28,7 +28,9 @@ async function destinationToPageNumber(
     if (!Array.isArray(explicit) || explicit.length === 0) return null;
     const ref = explicit[0];
     if (ref && typeof ref === "object") {
-      const idx = await pdf.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0]);
+      const idx = await pdf.getPageIndex(
+        ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0],
+      );
       return idx + 1;
     }
     return null;
@@ -53,7 +55,9 @@ async function flattenOutline(
   }
 }
 
-function dedupeByPage(entries: { title: string; page: number }[]): { title: string; page: number }[] {
+function dedupeByPage(
+  entries: { title: string; page: number }[],
+): { title: string; page: number }[] {
   const map = new Map<number, string>();
   for (const e of entries) {
     const prev = map.get(e.page);
@@ -105,7 +109,9 @@ function rangesFromOutlineEntries(
     });
   }
 
-  const valid = ranges.filter((r) => r.startPage <= r.endPage && r.startPage >= 1);
+  const valid = ranges.filter(
+    (r) => r.startPage <= r.endPage && r.startPage >= 1,
+  );
   if (valid.length === 0) {
     return [
       {
@@ -132,7 +138,14 @@ export async function extractChapterRanges(
   if (outline?.length) {
     await flattenOutline(pdf, outline as OutlineNode[], flat);
   }
-  const sorted = dedupeByPage(flat);
+  let sorted = dedupeByPage(flat);
+  /** Many PDFs expose a useless outline where every entry resolves to the same page. */
+  if (sorted.length >= 1 && numPages >= 20) {
+    const uniquePages = new Set(sorted.map((s) => s.page));
+    if (uniquePages.size === 1) {
+      sorted = [];
+    }
+  }
   const ranges = rangesFromOutlineEntries(sorted, numPages, bookTitle);
   return { numPages, ranges };
 }
@@ -141,8 +154,17 @@ export function chapterMetaForPage(
   pageNumber: number,
   ranges: ChapterRange[],
 ): { chapterNumber: number; chapterTitle: string; isChapterStart: boolean } {
+  if (ranges.length === 0) {
+    return {
+      chapterNumber: 1,
+      chapterTitle: "Chapter 1",
+      isChapterStart: pageNumber === 1,
+    };
+  }
+  const ordered = [...ranges].sort((a, b) => a.startPage - b.startPage);
   const r =
-    ranges.find((x) => pageNumber >= x.startPage && pageNumber <= x.endPage) ?? ranges[0];
+    ordered.find((x) => pageNumber >= x.startPage && pageNumber <= x.endPage) ??
+    ordered[0];
   if (!r) {
     return {
       chapterNumber: 1,
