@@ -179,7 +179,7 @@ export function ChapterReaderView({
             ) : (
               <Headphones className="h-4 w-4" />
             )}
-            AI voice session
+            Start session
           </Button>
         ) : null}
       </div>

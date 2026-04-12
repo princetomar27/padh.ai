@@ -204,7 +204,7 @@ export function TutorSessionView({ sessionId }: TutorSessionViewProps) {
       toast.error("This segment has no readable text");
       return;
     }
-    const prompt = `Read this textbook segment aloud in a clear teaching voice, in the same language as the text. Keep it natural for voice. After reading, pause briefly so the student can read along on the page.\n\n"""${text.slice(0, 8000)}"""`;
+    const prompt = `Read this textbook segment aloud in a clear teaching voice using the same language as the text. Keep it brief and natural, then pause.\n\n"""${text.slice(0, 1500)}"""`;
     const ok = realtime.sendRealtimeText(prompt);
     if (!ok) {
       toast.error("Could not send to tutor (connection closed)");

@@ -62,11 +62,11 @@ async function createEphemeralAuthToken(apiKey: string): Promise<string> {
 }
 
 const SESSION_VOICE_RULES = `## Voice session behavior
-- The student has just connected to voice. Speak first—do not wait for them to talk first.
-- Begin with a warm, brief introduction of yourself as their tutor (one or two sentences).
-- Ask one short friendly question about them, their goals, or how they feel about this topic.
-- Then transition into teaching: start discussing the current chapter naturally (outline what you will cover, then begin with the opening ideas).
-- Keep everything conversational and appropriate for listening (avoid long bullet lists unless asked).`;
+- The student has just connected to voice. Speak first without waiting.
+- Keep replies short by default (3-5 sentences), then pause for interaction.
+- Start with a brief intro, ask one short question, then begin chapter teaching.
+- Prioritize low-latency turn-taking: avoid long monologues unless asked.
+- Keep speech conversational and easy to follow for children.`;
 
 function buildTutorSystemInstruction(
   agentInstructions: string,
@@ -129,10 +129,21 @@ export async function createGeminiLiveSessionForAgent(opts: {
       model: modelResource,
       generationConfig: {
         responseModalities: ["AUDIO"],
+        temperature: 0.5,
+        maxOutputTokens: 140,
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName },
           },
+        },
+      },
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
+          endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
+          silenceDurationMs: 220,
+          prefixPaddingMs: 80,
         },
       },
       systemInstruction: {

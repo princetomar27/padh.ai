@@ -10,6 +10,11 @@ export type RealtimeConnectionState =
 
 const WS_BASE = "wss://generativelanguage.googleapis.com";
 const INPUT_SAMPLE_RATE = 16000;
+/**
+ * Smaller chunks reduce user-end -> model-end delay.
+ * 1024 @ 48kHz is ~21ms of audio (vs ~85ms at 4096).
+ */
+const AUDIO_FRAME_SIZE = 1024;
 
 function pcmRateFromMime(mime: string): number {
   const m = /rate=(\d+)/i.exec(mime);
@@ -269,7 +274,7 @@ export function useGeminiLiveWebSocket(opts: {
         audioInRef.current = inCtx;
         await inCtx.resume();
         const source = inCtx.createMediaStreamSource(stream);
-        const processor = inCtx.createScriptProcessor(4096, 1, 1);
+        const processor = inCtx.createScriptProcessor(AUDIO_FRAME_SIZE, 1, 1);
         processorRef.current = processor;
         processor.onaudioprocess = (ev) => {
           const w = wsRef.current;

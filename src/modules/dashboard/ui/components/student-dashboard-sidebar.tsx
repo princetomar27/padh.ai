@@ -10,35 +10,25 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import {
-  BotIcon,
-  VideoIcon,
-  BookOpenIcon,
-  GraduationCapIcon,
-} from "lucide-react";
+import { BookOpenIcon, GraduationCapIcon, HomeIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const studentNavigationItems = [
   {
-    icon: VideoIcon,
-    label: "My Meetings",
-    href: "/meetings",
-  },
-  {
-    icon: BotIcon,
-    label: "AI Agents",
-    href: "/agents",
+    icon: HomeIcon,
+    label: "Home",
+    href: "/dashboard",
   },
   {
     icon: BookOpenIcon,
-    label: "Study Materials",
-    href: "/study-materials",
+    label: "Subjects",
+    href: "/learn/subjects",
   },
   {
     icon: GraduationCapIcon,
-    label: "Assignments",
-    href: "/assignments",
+    label: "Study materials",
+    href: "/study-materials",
   },
 ];
 
@@ -56,10 +46,18 @@ export const StudentDashboardSidebar = () => {
                   asChild
                   className={cn(
                     " h-10 hover:bg-linear-to-r/oklch border border-transparent hover:cursor-pointer hover:border-[#5D6B68]/10 from-sidebar-accent from-5% via-30% via-sidebar/10 to-sidebar/50",
-                    pathName === item.href &&
+                    (item.href === "/dashboard"
+                      ? pathName === "/dashboard"
+                      : pathName === item.href ||
+                        pathName.startsWith(`${item.href}/`)) &&
                       "bg-linear-to-r/oklch border-[#5D6B68]/10 via-30% via-sidebar/30 to-sidebar/50"
                   )}
-                  isActive={pathName === item.href}
+                  isActive={
+                    item.href === "/dashboard"
+                      ? pathName === "/dashboard"
+                      : pathName === item.href ||
+                        pathName.startsWith(`${item.href}/`)
+                  }
                 >
                   <Link
                     href={item.href}

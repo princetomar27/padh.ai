@@ -15,6 +15,13 @@
       "when": 1775298200000,
       "tag": "0001_learning_session_status_paused",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775298300000,
+      "tag": "0002_books_chapter_ingest",
+      "breakpoints": true
     }
   ]
 }

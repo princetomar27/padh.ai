@@ -7,13 +7,17 @@ import {
   classes,
   learningSessions,
   pdfChunks,
+  questions,
+  subjects,
+  tests,
 } from "@/db/schema";
 import { createGeminiLiveSessionForAgent } from "@/lib/gemini/create-live-session";
+import { ensureTutorAgentForSubjectClass } from "@/modules/agents/server/ensure-tutor";
 import { summarizeLearningSession } from "@/lib/openai/session-summary";
 import { ingest } from "@/inngest/client";
 import { createTRPCRouter, studentProcedure } from "@/trpc/init";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import {
   appendTranscriptSchema,
   chapterIdInputSchema,
@@ -486,5 +490,79 @@ export const learningRouter = createTRPCRouter({
       .innerJoin(chapters, eq(learningSessions.chapterId, chapters.id))
       .where(eq(learningSessions.studentId, ctx.user.id))
       .orderBy(desc(learningSessions.createdAt));
+  }),
+
+  /** Mock tests available for the student’s class (for dashboard cards). */
+  listAvailableTests: studentProcedure.query(async ({ ctx }) => {
+    const [cls] = await db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(eq(classes.number, ctx.user.class!))
+      .limit(1);
+
+    if (!cls) return [];
+
+    const testRows = await db
+      .select({
+        id: tests.id,
+        title: tests.title,
+        duration: tests.duration,
+        subjectName: subjects.name,
+        chapterTitle: chapters.title,
+        chapterId: chapters.id,
+      })
+      .from(tests)
+      .innerJoin(chapters, eq(tests.chapterId, chapters.id))
+      .innerJoin(subjects, eq(chapters.subjectId, subjects.id))
+      .where(
+        and(
+          eq(chapters.classId, cls.id),
+          eq(tests.isActive, true),
+          eq(chapters.isActive, true),
+        ),
+      )
+      .orderBy(desc(tests.createdAt))
+      .limit(24);
+
+    if (testRows.length === 0) return [];
+
+    const testIds = testRows.map((t) => t.id);
+    const qRows = await db
+      .select({
+        testId: questions.testId,
+        difficulty: questions.difficulty,
+      })
+      .from(questions)
+      .where(
+        and(inArray(questions.testId, testIds), eq(questions.isActive, true)),
+      );
+
+    const rank: Record<string, number> = { EASY: 0, MEDIUM: 1, HARD: 2 };
+    const byTest = new Map<string, string[]>();
+    for (const q of qRows) {
+      const list = byTest.get(q.testId) ?? [];
+      list.push(q.difficulty);
+      byTest.set(q.testId, list);
+    }
+
+    function aggregateDifficulty(ds: string[]) {
+      if (ds.length === 0) return "MEDIUM" as const;
+      let best = ds[0]!;
+      let r = rank[best] ?? 1;
+      for (const d of ds) {
+        const rr = rank[d] ?? 1;
+        if (rr > r) {
+          best = d;
+          r = rr;
+        }
+      }
+      return best as "EASY" | "MEDIUM" | "HARD";
+    }
+
+    return testRows.map((t) => ({
+      ...t,
+      questionCount: byTest.get(t.id)?.length ?? 0,
+      difficulty: aggregateDifficulty(byTest.get(t.id) ?? []),
+    }));
   }),
 });
