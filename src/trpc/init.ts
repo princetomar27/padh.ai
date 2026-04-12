@@ -1,8 +1,5 @@
-import { db } from "@/db";
-import { userProfiles } from "@/db/schema";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { getSessionUserProfile } from "@/lib/auth/session-user-profile";
 import { initTRPC, TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
 import { cache } from "react";
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -34,77 +31,7 @@ export const baseProcedure = t.procedure;
  * works correctly in local dev without a webhook tunnel.
  */
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
-  const { userId } = await auth();
-
-  if (!userId) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "You must be signed in to perform this action.",
-    });
-  }
-
-  // Try to find the existing profile first (hot path — one DB query)
-  let [user] = await db
-    .select()
-    .from(userProfiles)
-    .where(eq(userProfiles.clerkId, userId))
-    .limit(1);
-
-  // Upsert: webhook may not have fired yet (first request after sign-up)
-  if (!user) {
-    const clerkUser = await currentUser();
-    if (!clerkUser) {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "Could not resolve Clerk user.",
-      });
-    }
-
-    const email =
-      clerkUser.emailAddresses.find(
-        (e) => e.id === clerkUser.primaryEmailAddressId,
-      )?.emailAddress ?? clerkUser.emailAddresses[0]?.emailAddress;
-
-    if (!email) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Clerk account has no email address.",
-      });
-    }
-
-    const [created] = await db
-      .insert(userProfiles)
-      .values({
-        clerkId: userId,
-        name: clerkUser.fullName ?? clerkUser.username ?? "User",
-        email,
-        image: clerkUser.imageUrl ?? null,
-        role: "STUDENT",
-        isOnboarded: false,
-      })
-      .onConflictDoNothing()
-      .returning();
-
-    // Re-fetch in case onConflictDoNothing() swallowed a concurrent insert
-    if (!created) {
-      const [existing] = await db
-        .select()
-        .from(userProfiles)
-        .where(eq(userProfiles.clerkId, userId))
-        .limit(1);
-      user = existing;
-    } else {
-      user = created;
-    }
-
-    if (!user) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to create user profile.",
-      });
-    }
-  }
-
+  const { userId, user } = await getSessionUserProfile();
   return next({ ctx: { ...ctx, userId, user } });
 });
 
