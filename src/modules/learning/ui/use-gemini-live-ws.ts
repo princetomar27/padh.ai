@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RealtimeConnectionState =
   | "idle"
@@ -128,20 +128,49 @@ export function useGeminiLiveWebSocket(opts: {
   onServerJson?: (raw: string) => void;
 }) {
   const { onServerJson } = opts;
+  const onServerJsonRef = useRef(onServerJson);
+  useEffect(() => {
+    onServerJsonRef.current = onServerJson;
+  }, [onServerJson]);
+
   const wsRef = useRef<WebSocket | null>(null);
   const audioInRef = useRef<AudioContext | null>(null);
   const audioOutRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const scheduleRef = useRef({ nextTime: 0 });
+  /** Mic uplink to Gemini — off until server is ready; if kickoff is used, stays off until first model turnComplete (reduces speaker→mic echo cutting the opening). */
   const canSendAudioRef = useRef(false);
+  /** When true, keep mic frames from being sent until `serverContent.turnComplete`. */
+  const deferMicUntilTurnCompleteRef = useRef(false);
   /** Sent once after `setupComplete` so the tutor speaks first (welcome + chapter). */
   const kickoffPendingRef = useRef<Record<string, unknown> | null>(null);
+  /**
+   * True while the model is generating a turn (after first model output until turnComplete).
+   * Sending another `realtimeInput.text` during this window causes overlapping speech.
+   */
+  const modelTurnActiveRef = useRef(false);
+  /** Latest queued `realtimeInput.text` to send when the current model turn ends. */
+  const pendingRealtimeTextRef = useRef<string | null>(null);
+
   const [state, setState] = useState<RealtimeConnectionState>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
 
+  const tryFlushPendingRealtimeText = useCallback(() => {
+    const t = pendingRealtimeTextRef.current;
+    if (t == null || modelTurnActiveRef.current) return;
+    const w = wsRef.current;
+    if (!w || w.readyState !== WebSocket.OPEN) return;
+    pendingRealtimeTextRef.current = null;
+    w.send(JSON.stringify({ realtimeInput: { text: t } }));
+    modelTurnActiveRef.current = true;
+  }, []);
+
   const teardownAudio = useCallback(() => {
     canSendAudioRef.current = false;
+    deferMicUntilTurnCompleteRef.current = false;
+    modelTurnActiveRef.current = false;
+    pendingRealtimeTextRef.current = null;
     processorRef.current?.disconnect();
     processorRef.current = null;
     void audioInRef.current?.close();
@@ -155,6 +184,8 @@ export function useGeminiLiveWebSocket(opts: {
 
   const disconnect = useCallback(() => {
     kickoffPendingRef.current = null;
+    modelTurnActiveRef.current = false;
+    pendingRealtimeTextRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
     teardownAudio();
@@ -163,7 +194,7 @@ export function useGeminiLiveWebSocket(opts: {
 
   const handleMessage = useCallback(
     (data: string) => {
-      onServerJson?.(data);
+      onServerJsonRef.current?.(data);
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(data) as Record<string, unknown>;
@@ -172,42 +203,54 @@ export function useGeminiLiveWebSocket(opts: {
       }
 
       if (isSetupCompleteMessage(msg)) {
-        canSendAudioRef.current = true;
         const kick = kickoffPendingRef.current;
         const w = wsRef.current;
         if (kick && w && w.readyState === WebSocket.OPEN) {
           w.send(JSON.stringify(kick));
           kickoffPendingRef.current = null;
+          modelTurnActiveRef.current = true;
+        }
+        if (!deferMicUntilTurnCompleteRef.current) {
+          canSendAudioRef.current = true;
         }
       }
 
       const outCtx = audioOutRef.current;
-      if (outCtx) {
-        const sc = msg.serverContent as Record<string, unknown> | undefined;
-        if (sc?.interrupted) {
-          scheduleRef.current.nextTime = outCtx.currentTime;
-        }
+      const sc = msg.serverContent as Record<string, unknown> | undefined;
+
+      if (outCtx && sc?.interrupted) {
+        scheduleRef.current.nextTime = outCtx.currentTime;
+        modelTurnActiveRef.current = false;
+        tryFlushPendingRealtimeText();
       }
 
-      const sc = msg.serverContent as Record<string, unknown> | undefined;
       const modelTurn = sc?.modelTurn as Record<string, unknown> | undefined;
       const parts = modelTurn?.parts as unknown[] | undefined;
-      if (!outCtx || !parts?.length) return;
 
-      for (const p of parts) {
-        if (!p || typeof p !== "object") continue;
-        const audio = extractInlineAudio(p as Record<string, unknown>);
-        if (audio) {
-          playPcm16Base64(
-            outCtx,
-            audio.data,
-            audio.mimeType,
-            scheduleRef.current,
-          );
+      if (outCtx && parts?.length) {
+        modelTurnActiveRef.current = true;
+        for (const p of parts) {
+          if (!p || typeof p !== "object") continue;
+          const audio = extractInlineAudio(p as Record<string, unknown>);
+          if (audio) {
+            playPcm16Base64(
+              outCtx,
+              audio.data,
+              audio.mimeType,
+              scheduleRef.current,
+            );
+          }
         }
       }
+
+      if (sc && (sc.turnComplete === true || sc.turn_complete === true)) {
+        canSendAudioRef.current = true;
+        deferMicUntilTurnCompleteRef.current = false;
+        modelTurnActiveRef.current = false;
+        tryFlushPendingRealtimeText();
+      }
     },
-    [onServerJson],
+    [tryFlushPendingRealtimeText],
   );
 
   const connect = useCallback(
@@ -220,6 +263,9 @@ export function useGeminiLiveWebSocket(opts: {
       setLastError(null);
       setState("connecting");
       canSendAudioRef.current = false;
+      modelTurnActiveRef.current = false;
+      pendingRealtimeTextRef.current = null;
+      deferMicUntilTurnCompleteRef.current = Boolean(args.kickoffClientMessage);
       kickoffPendingRef.current = args.kickoffClientMessage ?? null;
 
       let ws: WebSocket | null = null;
@@ -322,7 +368,15 @@ export function useGeminiLiveWebSocket(opts: {
 
         setState("connected");
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        let msg = e instanceof Error ? e.message : String(e);
+        if (
+          typeof DOMException !== "undefined" &&
+          e instanceof DOMException &&
+          e.name === "NotAllowedError"
+        ) {
+          msg =
+            "Microphone access was blocked. Allow the mic for this site, then tap Connect voice again.";
+        }
         ws?.close();
         wsRef.current = null;
         teardownAudio();
@@ -336,7 +390,12 @@ export function useGeminiLiveWebSocket(opts: {
   const sendRealtimeText = useCallback((text: string) => {
     const w = wsRef.current;
     if (!w || w.readyState !== WebSocket.OPEN) return false;
+    if (modelTurnActiveRef.current) {
+      pendingRealtimeTextRef.current = text;
+      return true;
+    }
     w.send(JSON.stringify({ realtimeInput: { text } }));
+    modelTurnActiveRef.current = true;
     return true;
   }, []);
 

@@ -5,13 +5,17 @@ import {
   books,
   chapters,
   classes,
+  importantQuestions,
   learningSessions,
   pdfChunks,
   questions,
   subjects,
   tests,
 } from "@/db/schema";
-import { createGeminiLiveSessionForAgent } from "@/lib/gemini/create-live-session";
+import {
+  createGeminiLiveSessionForAgent,
+  type GeminiLiveLessonContext,
+} from "@/lib/gemini/create-live-session";
 import { ensureTutorAgentForSubjectClass } from "@/modules/agents/server/ensure-tutor";
 import { summarizeLearningSession } from "@/lib/openai/session-summary";
 import { ingest } from "@/inngest/client";
@@ -99,6 +103,11 @@ export const learningRouter = createTRPCRouter({
         input.chapterId,
       );
 
+      await ensureTutorAgentForSubjectClass({
+        subjectId: row.subjectId,
+        classId: row.classId,
+      });
+
       const [tutor] = await db
         .select()
         .from(agents)
@@ -116,7 +125,7 @@ export const learningRouter = createTRPCRouter({
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message:
-            "No AI tutor is configured for this subject and class. Ask an admin to run “Seed tutor agents”.",
+            "Could not create or load the AI tutor for this subject and class. Ask an admin to check agents configuration.",
         });
       }
 
@@ -173,11 +182,20 @@ export const learningRouter = createTRPCRouter({
         .select({
           title: chapters.title,
           bookTitle: books.title,
+          startPage: chapters.startPage,
+          endPage: chapters.endPage,
+          chapterIngestSources: books.chapterIngestSources,
         })
         .from(chapters)
         .innerJoin(books, eq(chapters.bookId, books.id))
         .where(eq(chapters.id, s.chapterId))
         .limit(1);
+
+      const pdfReaderMode =
+        Array.isArray(ch?.chapterIngestSources) &&
+        ch.chapterIngestSources.length > 0
+          ? ("chapter_file" as const)
+          : ("book_file" as const);
 
       const [agent] = s.agentId
         ? await db
@@ -195,6 +213,12 @@ export const learningRouter = createTRPCRouter({
         chapterTitle: ch?.title ?? "",
         bookTitle: ch?.bookTitle ?? "",
         agent: agent ?? null,
+        reader: {
+          chapterId: s.chapterId,
+          startPage: ch?.startPage ?? 1,
+          endPage: ch?.endPage ?? 1,
+          pdfReaderMode,
+        },
       };
     }),
 
@@ -441,19 +465,99 @@ export const learningRouter = createTRPCRouter({
           .select({
             chapterTitle: chapters.title,
             bookTitle: books.title,
+            chapterNumber: chapters.chapterNumber,
+            startPage: chapters.startPage,
+            endPage: chapters.endPage,
+            description: chapters.description,
+            objectives: chapters.objectives,
           })
           .from(chapters)
           .innerJoin(books, eq(chapters.bookId, books.id))
           .where(eq(chapters.id, s.chapterId))
           .limit(1);
 
-        const chapterTitle = chMeta?.chapterTitle ?? "this chapter";
-        const bookTitle = chMeta?.bookTitle ?? "the textbook";
+        const iqRows = await db
+          .select({
+            questionText: importantQuestions.questionText,
+            difficulty: importantQuestions.difficulty,
+          })
+          .from(importantQuestions)
+          .where(
+            and(
+              eq(importantQuestions.chapterId, s.chapterId),
+              eq(importantQuestions.isActive, true),
+            ),
+          )
+          .orderBy(asc(importantQuestions.orderInChapter))
+          .limit(10);
+
+        const chunkFields = {
+          orderInChapter: pdfChunks.orderInChapter,
+          pageNumber: bookPages.pageNumber,
+          speakText: pdfChunks.speakText,
+          text: pdfChunks.text,
+        };
+
+        let [atChunk] = s.currentChunkId
+          ? await db
+              .select(chunkFields)
+              .from(pdfChunks)
+              .innerJoin(bookPages, eq(pdfChunks.bookPageId, bookPages.id))
+              .where(eq(pdfChunks.id, s.currentChunkId))
+              .limit(1)
+          : [];
+
+        if (!atChunk && s.currentChunkIndex != null) {
+          [atChunk] = await db
+            .select(chunkFields)
+            .from(pdfChunks)
+            .innerJoin(bookPages, eq(pdfChunks.bookPageId, bookPages.id))
+            .where(
+              and(
+                eq(pdfChunks.chapterId, s.chapterId),
+                eq(pdfChunks.orderInChapter, s.currentChunkIndex),
+              ),
+            )
+            .limit(1);
+        }
+
+        if (!atChunk) {
+          [atChunk] = await db
+            .select(chunkFields)
+            .from(pdfChunks)
+            .innerJoin(bookPages, eq(pdfChunks.bookPageId, bookPages.id))
+            .where(eq(pdfChunks.chapterId, s.chapterId))
+            .orderBy(asc(pdfChunks.orderInChapter))
+            .limit(1);
+        }
+
+        const previewRaw = (atChunk?.speakText ?? atChunk?.text ?? "").trim();
+        const preview =
+          previewRaw.length > 1800
+            ? `${previewRaw.slice(0, 1799)}…`
+            : previewRaw;
+
+        const lesson: GeminiLiveLessonContext = {
+          chapterTitle: chMeta?.chapterTitle ?? "this chapter",
+          bookTitle: chMeta?.bookTitle ?? "the textbook",
+          chapterNumber: chMeta?.chapterNumber ?? null,
+          chapterPdfStartPage: chMeta?.startPage ?? 1,
+          chapterPdfEndPage: chMeta?.endPage ?? 1,
+          description: chMeta?.description ?? null,
+          objectives: chMeta?.objectives ?? null,
+          importantQuestions: iqRows.map((q) => ({
+            questionText: q.questionText,
+            difficulty: q.difficulty != null ? String(q.difficulty) : null,
+          })),
+          currentOrderInChapter: atChunk?.orderInChapter ?? 0,
+          currentSegmentDisplayOneBased: (atChunk?.orderInChapter ?? 0) + 1,
+          currentPdfPage: atChunk?.pageNumber ?? chMeta?.startPage ?? 1,
+          currentSegmentPreview: preview || "(empty segment)",
+        };
 
         const creds = await createGeminiLiveSessionForAgent({
           agentInstructions: agent.instructions,
-          chapterTitle,
-          bookTitle,
+          lesson,
         });
 
         return {

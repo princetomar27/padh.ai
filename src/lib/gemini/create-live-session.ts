@@ -9,6 +9,31 @@ import {
 const AUTH_TOKENS_URL =
   "https://generativelanguage.googleapis.com/v1alpha/auth_tokens";
 
+/** Max chars for kickoff `realtimeInput.text` (keeps WS payload reasonable). */
+const KICKOFF_TEXT_BUDGET = 3200;
+
+export type GeminiLiveLessonQuestion = {
+  questionText: string;
+  difficulty?: string | null;
+};
+
+export type GeminiLiveLessonContext = {
+  chapterTitle: string;
+  bookTitle: string;
+  chapterNumber: number | null;
+  chapterPdfStartPage: number;
+  chapterPdfEndPage: number;
+  description: string | null;
+  objectives: string | null;
+  importantQuestions: GeminiLiveLessonQuestion[];
+  /** `pdfChunks.orderInChapter` (0-based index in chapter). */
+  currentOrderInChapter: number;
+  /** Student-facing segment number (matches UI “Seg N”). */
+  currentSegmentDisplayOneBased: number;
+  currentPdfPage: number;
+  currentSegmentPreview: string;
+};
+
 export type GeminiLiveSessionCredentials = {
   accessToken: string;
   /** Short id, e.g. gemini-2.5-... */
@@ -24,6 +49,82 @@ export type GeminiLiveSessionCredentials = {
    */
   kickoffClientMessage: Record<string, unknown>;
 };
+
+function clip(s: string | null | undefined, max: number): string {
+  if (!s) return "";
+  const t = s.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function buildLessonVoiceRules(ctx: GeminiLiveLessonContext): string {
+  const iqLines =
+    ctx.importantQuestions.length > 0
+      ? ctx.importantQuestions
+          .map(
+            (q, i) =>
+              `${i + 1}. ${clip(q.questionText, 220)}${q.difficulty ? ` (${q.difficulty})` : ""}`,
+          )
+          .join("\n")
+      : "(No generated important-questions list yet — still weave in good exam-style checks.)";
+
+  const desc = clip(ctx.description, 900);
+  const obj = clip(ctx.objectives, 1100);
+
+  return `## Voice lesson behavior (live class)
+- The student just joined voice. **Speak first** with a warm, energetic welcome — like a great teacher starting class.
+- They see the **textbook PDF** on screen for this chapter (book pages **${ctx.chapterPdfStartPage}–${ctx.chapterPdfEndPage}**). Reference the visible page when it helps.
+- **Teach in order**: follow textbook segments in orderInChapter (global order through the chapter). One segment (or one PDF page worth of ideas) at a time: explain clearly → **one quick check question** → invite their questions → then offer to move on.
+- **Start where they are**: they are currently on **segment ${ctx.currentSegmentDisplayOneBased}** (internal order index ${ctx.currentOrderInChapter}; PDF page **${ctx.currentPdfPage}**). Open with a hook tied to this spot, then teach this part before advancing.
+- Use **short–medium turns** (roughly 4–8 sentences) so it feels conversational, unless they ask to go deeper.
+- Encourage them to use **“Read segment”** if a dense paragraph needs exact wording.
+- Stay supportive, age-appropriate, and celebrate small wins.
+
+## Chapter context (use naturally in dialogue)
+**Chapter:** "${ctx.chapterTitle}" (book chapter #${ctx.chapterNumber ?? "?"})  
+**Book:** "${ctx.bookTitle}"
+
+**Description:**  
+${desc || "(none)"}
+
+**Learning objectives:**  
+${obj || "(none)"}
+
+**Important questions to weave in over the lesson (not all at once):**  
+${iqLines}
+
+**Current segment preview (for grounding only — expand and teach, don’t only read):**  
+"""${clip(ctx.currentSegmentPreview, 700)}"""`;
+}
+
+function buildTutorSystemInstruction(
+  agentInstructions: string,
+  ctx: GeminiLiveLessonContext,
+): string {
+  return `${agentInstructions.trim()}
+
+${buildLessonVoiceRules(ctx)}`;
+}
+
+/** Same shape as sendRealtimeText / “Read segment” — reliable for native-audio Live models. */
+export function buildKickoffClientMessage(
+  ctx: GeminiLiveLessonContext,
+): Record<string, unknown> {
+  const parts: string[] = [
+    `I just joined the live voice lesson.`,
+    `We're on chapter "${ctx.chapterTitle}" from "${ctx.bookTitle}".`,
+    `I'm looking at the textbook PDF (pages ${ctx.chapterPdfStartPage}–${ctx.chapterPdfEndPage}).`,
+    `Please start class now: energetic greeting, one friendly question about my goals, then begin teaching **right at** segment ${ctx.currentSegmentDisplayOneBased} (PDF page ${ctx.currentPdfPage}).`,
+    `Work page-by-page / segment-by-segment in order; after each chunk, check my understanding before moving on.`,
+  ];
+  let text = parts.join(" ");
+  if (text.length > KICKOFF_TEXT_BUDGET) {
+    text = clip(text, KICKOFF_TEXT_BUDGET);
+  }
+  return {
+    realtimeInput: { text },
+  };
+}
 
 async function createEphemeralAuthToken(apiKey: string): Promise<string> {
   const body = {
@@ -61,38 +162,6 @@ async function createEphemeralAuthToken(apiKey: string): Promise<string> {
   return data.name;
 }
 
-const SESSION_VOICE_RULES = `## Voice session behavior
-- The student has just connected to voice. Speak first without waiting.
-- Keep replies short by default (3-5 sentences), then pause for interaction.
-- Start with a brief intro, ask one short question, then begin chapter teaching.
-- Prioritize low-latency turn-taking: avoid long monologues unless asked.
-- Keep speech conversational and easy to follow for children.`;
-
-function buildTutorSystemInstruction(
-  agentInstructions: string,
-  chapterTitle: string,
-  bookTitle: string,
-): string {
-  return `${agentInstructions.trim()}
-
-## Current study session
-- Chapter: "${chapterTitle}"
-- Book: "${bookTitle}"
-
-${SESSION_VOICE_RULES}`;
-}
-
-/** Same shape as `sendRealtimeText` / “Read segment” — reliable for native-audio Live models. */
-export function buildKickoffClientMessage(
-  chapterTitle: string,
-  bookTitle: string,
-): Record<string, unknown> {
-  const text = `I have just joined the voice session. We are studying the chapter "${chapterTitle}" from "${bookTitle}". Please introduce yourself briefly, ask me one short friendly question about myself or my goals with this subject, then start discussing this chapter with me in a clear, supportive teaching style.`;
-  return {
-    realtimeInput: { text },
-  };
-}
-
 /**
  * Creates a short-lived Live API token (v1alpha) via REST (no SDK — avoids Next.js
  * bundling issues with google-auth-library) and the matching `setup` + kickoff
@@ -100,8 +169,7 @@ export function buildKickoffClientMessage(
  */
 export async function createGeminiLiveSessionForAgent(opts: {
   agentInstructions: string;
-  chapterTitle: string;
-  bookTitle: string;
+  lesson: GeminiLiveLessonContext;
 }): Promise<GeminiLiveSessionCredentials> {
   const apiKey = getGoogleAiApiKey();
   if (!apiKey) {
@@ -118,8 +186,7 @@ export async function createGeminiLiveSessionForAgent(opts: {
 
   const systemInstruction = buildTutorSystemInstruction(
     opts.agentInstructions,
-    opts.chapterTitle,
-    opts.bookTitle,
+    opts.lesson,
   );
 
   const accessToken = await createEphemeralAuthToken(apiKey);
@@ -129,8 +196,9 @@ export async function createGeminiLiveSessionForAgent(opts: {
       model: modelResource,
       generationConfig: {
         responseModalities: ["AUDIO"],
-        temperature: 0.5,
-        maxOutputTokens: 140,
+        temperature: 0.55,
+        // Native audio needs room for full sentences; 140 caused abrupt cutoffs.
+        maxOutputTokens: 8192,
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName },
@@ -140,10 +208,10 @@ export async function createGeminiLiveSessionForAgent(opts: {
       realtimeInputConfig: {
         automaticActivityDetection: {
           disabled: false,
-          startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
-          endOfSpeechSensitivity: "END_SENSITIVITY_HIGH",
-          silenceDurationMs: 220,
-          prefixPaddingMs: 80,
+          startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+          endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
+          silenceDurationMs: 700,
+          prefixPaddingMs: 220,
         },
       },
       systemInstruction: {
@@ -154,10 +222,7 @@ export async function createGeminiLiveSessionForAgent(opts: {
     },
   };
 
-  const kickoffClientMessage = buildKickoffClientMessage(
-    opts.chapterTitle,
-    opts.bookTitle,
-  );
+  const kickoffClientMessage = buildKickoffClientMessage(opts.lesson);
 
   return {
     accessToken,
